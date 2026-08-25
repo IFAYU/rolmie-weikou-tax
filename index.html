@@ -307,6 +307,18 @@ function fmtPlain(n){
   return n.toLocaleString('zh-Hant-TW');
 }
 
+// 每次改一個數字都會整個容器重畫（連動的統計數字才會即時更新），
+// 但重畫會把 <details> 打回預設關閉——輸入到一半視窗一直合起來很煩。
+// 這裡在重畫前記住哪些 <details data-key> 是展開的，重畫後照樣展開回去。
+function captureOpenState(container){
+  const open = new Set();
+  container.querySelectorAll('details[data-key]').forEach(d=>{ if(d.open) open.add(d.dataset.key); });
+  return open;
+}
+function restoreOpenState(container, openKeys){
+  container.querySelectorAll('details[data-key]').forEach(d=>{ if(openKeys.has(d.dataset.key)) d.open = true; });
+}
+
 // ---- 計算核心 ----
 function sumArr(arr){ return (arr||[]).reduce((a,b)=>a+(+b||0),0); }
 function monthRevenue(mo){
@@ -398,13 +410,14 @@ function selectOverviewCompany(key){
 }
 function renderOverviewContent(key){
   const el = document.getElementById('overview-content');
+  const openKeys = captureOpenState(el);
   const order = companyOrder();
   const turn = order[0];
   const turnName = DATA.companies[turn].name;
   const c = DATA.companies[key];
 
   let html = `
-  <details class="collapsible hint-collapsible">
+  <details class="collapsible hint-collapsible" data-key="hint">
     <summary>💡 說明 · 本月該填 <b>${turnName}</b>（點擊展開）</summary>
     <div class="hint-body">
       目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
@@ -417,6 +430,7 @@ function renderOverviewContent(key){
   html += companyOverviewCard(key, c, taxCalc(c), key===turn);
 
   el.innerHTML = html;
+  restoreOpenState(el, openKeys);
 }
 
 function companyOverviewCard(key, c, t, isTurn){
@@ -442,7 +456,7 @@ function companyOverviewCard(key, c, t, isTurn){
         </tr>`;
     }
     monthsHtml += `
-    <details class="month">
+    <details class="month" data-key="m-${mo.year}-${mo.month}">
       <summary>
         <span class="m">${mo.month} 月</span>
       </summary>
@@ -479,7 +493,7 @@ function companyOverviewCard(key, c, t, isTurn){
       <div class="stat"><div class="lbl">預計應納稅額</div><div class="val small" style="color:var(--danger)">${fmtPlain(t.final)}</div></div>
     </div>
 
-    <details class="collapsible settings-collapsible" style="margin-top:10px;">
+    <details class="collapsible settings-collapsible" data-key="settings" style="margin-top:10px;">
       <summary>⚙️ 設定（計稅年度／留底起點／扣憑獎勵金／淨利率，點擊展開編輯）</summary>
       <div class="row" style="margin-top:8px;">
         <span class="lbl">計稅年度<span class="note">目前總計營業額只加總這一年的12個月；改這裡會重建下方月份視窗</span></span>
@@ -500,7 +514,7 @@ function companyOverviewCard(key, c, t, isTurn){
     </details>
 
     <h2 style="margin-top:14px;">🧾 月份明細</h2>
-    <details class="collapsible" style="margin-bottom:8px;">
+    <details class="collapsible" data-key="monthnote" style="margin-bottom:8px;">
       <summary>說明（點擊展開）</summary>
       <div class="mini-note">點開每個月可編輯；顯示計稅年度整年＋隔年1~4月；過了隔年4月，去年整年會自動併入留底結餘並消失。</div>
     </details>
@@ -580,6 +594,7 @@ function selectTaxCompany(key){
 
 function renderTaxPanel(key){
   const el = document.getElementById('tax-content');
+  const openKeys = captureOpenState(el);
   const c = DATA.companies[key];
   const t = taxCalc(c);
   const accent = key;
@@ -596,7 +611,7 @@ function renderTaxPanel(key){
     <div class="sub">綜合所得淨額 ${fmtPlain(t.net)} × ${(t.rate*100).toFixed(0)}% － 累進差額 ${fmtPlain(t.diff)}</div>
   </div>
 
-  <details class="collapsible hint-collapsible" style="margin-top:12px;">
+  <details class="collapsible hint-collapsible" data-key="hint" style="margin-top:12px;">
     <summary>💡 說明（點擊展開）</summary>
     <div class="hint-body">
       ${c.name} 綜所稅試算，公式與原 Excel 一致：<br>
@@ -653,6 +668,7 @@ function renderTaxPanel(key){
       <input type="number" value="${c.tax.dividendCredit}" onchange="DATA.companies['${key}'].tax.dividendCredit=+this.value;save();renderAll();"></div>
   </div>
   `;
+  restoreOpenState(el, openKeys);
 }
 
 function switchTab(name){
