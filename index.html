@@ -10,6 +10,9 @@
 <meta name="robots" content="noindex,nofollow,noarchive">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%A7%BE</text></svg>">
 <title>蘿荔 × 薇蔻 業績與綜所稅試算</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --luoli:#B8925A;
@@ -29,20 +32,27 @@
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
     -webkit-font-smoothing:antialiased;
   }
-  #gate{
+  #auth-gate{
     position:fixed; inset:0; background:var(--bg); z-index:999;
-    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px;
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; padding:24px;
   }
-  #gate input{
-    font-size:18px; padding:12px 16px; border-radius:12px; border:1px solid var(--line);
-    text-align:center; letter-spacing:2px; width:min(260px,80vw);
+  #auth-gate form{width:min(300px,85vw); display:flex; flex-direction:column; gap:12px; text-align:center;}
+  #auth-gate input{
+    font-size:16px; padding:12px 16px; border-radius:12px; border:1px solid var(--line);
+    text-align:center; width:100%; box-sizing:border-box;
   }
-  #gate button{
+  #auth-gate button{
     font-size:16px; padding:10px 24px; border-radius:12px; border:none;
     background:var(--ink); color:#fff;
   }
-  #gate .hint{color:var(--sub); font-size:13px;}
-  #app{display:none; max-width:720px; margin:0 auto; padding-bottom:80px;}
+  #auth-gate .hint{color:var(--sub); font-size:13px;}
+  .cloud-pill{
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--sub);
+    background:var(--card); border:1px solid var(--line); border-radius:999px; padding:3px 10px;
+  }
+  .cloud-pill.on{color:var(--good); border-color:var(--good);}
+  .cloud-pill .dot{width:6px; height:6px; border-radius:50%; background:currentColor;}
+  #app{display:none; max-width:720px; margin:0 auto; padding-bottom:130px;}
   header.top{
     position:sticky; top:0; z-index:50; background:var(--bg);
     padding:14px 16px 0; border-bottom:1px solid var(--line);
@@ -178,10 +188,10 @@
 
   .footerbar{
     position:fixed; bottom:0; left:0; right:0; background:var(--card); border-top:1px solid var(--line);
-    display:flex; padding:8px 12px env(safe-area-inset-bottom); gap:8px; max-width:720px; margin:0 auto;
+    display:flex; flex-wrap:wrap; padding:8px 12px env(safe-area-inset-bottom); gap:8px; max-width:720px; margin:0 auto;
   }
   .footerbar button{
-    flex:1; padding:10px; border-radius:10px; border:1px solid var(--line); background:#fbfaf8; font-size:12.5px; color:var(--sub);
+    flex:1 1 40%; min-width:0; padding:10px 4px; border-radius:10px; border:1px solid var(--line); background:#fbfaf8; font-size:12px; color:var(--sub);
   }
   .hintbox{font-size:11.5px; color:var(--sub); background:#f1eee7; border-radius:10px; padding:9px 11px; margin-bottom:12px; line-height:1.5;}
   input[readonly]{background:#f1eee7; color:var(--sub);}
@@ -189,18 +199,22 @@
 </head>
 <body>
 
-<div id="gate">
-  <form id="gateForm" style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+<div id="auth-gate">
+  <form id="authForm">
     <div style="font-size:15px;font-weight:700;">蘿荔 × 薇蔻 業績與綜所稅試算</div>
-    <input id="gatePw" type="password" placeholder="••••" autocomplete="current-password">
-    <button type="submit">解鎖</button>
-    <div id="gateErr" class="hint">忘記密碼請找 IFAYU</div>
+    <div class="hint">雲端同步，登入後手機／電腦看到同一份資料</div>
+    <input id="authEmail" type="email" placeholder="Email" autocomplete="username" value="missyou52049@gmail.com">
+    <input id="authPw" type="password" placeholder="密碼" autocomplete="current-password">
+    <button type="submit">登入</button>
+    <div id="authErr" class="hint"></div>
   </form>
 </div>
 
 <div id="app">
   <header class="top">
-    <h1>蘿荔 × 薇蔻｜業績與綜所稅試算</h1>
+    <h1>蘿荔 × 薇蔻｜業績與綜所稅試算
+      <span class="cloud-pill" id="cloudPill" style="float:right;"><span class="dot"></span><span id="cloudPillText">離線</span></span>
+    </h1>
     <div class="tabs">
       <div class="tab active" data-tab="overview" onclick="switchTab('overview')">📒 業績總表</div>
       <div class="tab" data-tab="tax" onclick="switchTab('tax')">🧮 綜所稅試算</div>
@@ -220,8 +234,10 @@
   </section>
 
   <div class="footerbar">
+    <button onclick="cloudRefresh()">☁️ 雲端重新整理</button>
     <button onclick="exportBackup()">⬇️ 匯出備份</button>
     <button onclick="document.getElementById('importFile').click()">⬆️ 匯入備份</button>
+    <button onclick="doSignOut()">🚪 登出</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importBackup(event)">
   </div>
 </div>
@@ -290,11 +306,7 @@ function migrateMonth(mo){
   if(typeof mo.extra !== 'number') mo.extra = 0;
   return mo;
 }
-function load(){
-  const raw = localStorage.getItem(STORAGE_KEY);
-  try{
-    DATA = raw ? JSON.parse(raw) : defaultData();
-  }catch(e){ DATA = defaultData(); }
+function normalizeData(){
   Object.values(DATA.companies).forEach(c => {
     c.months.forEach(migrateMonth);
     // 保險：不管過去用什麼方式改過 taxYear，載入時一律強制讓月份陣列對齊 taxYear（12個月＋隔年1~4月）。
@@ -302,10 +314,25 @@ function load(){
     rebuildWindowForYear(c, c.taxYear);
     autoAdvanceYear(c);
   });
-  save();
 }
+// 本機快取：開站先讀這份立刻畫面可用，登入成功後 cloudLoad() 會用雲端資料覆蓋（見下方 Firebase 區塊）
+function load(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  try{
+    DATA = raw ? JSON.parse(raw) : defaultData();
+  }catch(e){ DATA = defaultData(); }
+  normalizeData();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
+}
+let saveTimer = null;
 function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
+  if(HAS_FB && fbUser){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{
+      rolmieDocRef().set(DATA).then(()=>{ setCloudPill(true); }).catch(()=>{ setCloudPill(false,'雲端儲存失敗，稍後自動重試'); });
+    }, 600);
+  }
 }
 
 function fmt(n){
@@ -789,17 +816,6 @@ function importBackup(evt){
   reader.readAsText(file);
 }
 
-// ---- Gate ----
-const GATE_PW = 'rolie2150202';
-const GATE_KEY = 'rolmie.weikou.tax.unlocked';
-
-function openApp(){
-  const g = document.getElementById('gate');
-  if(g) g.remove();
-  document.getElementById('app').style.display='block';
-  load(); renderAll();
-}
-
 // 點進任何數字欄位就整格反白選取，直接打字會蓋掉原本的 0，不用自己先刪
 document.addEventListener('focusin', function(ev){
   if(ev.target && ev.target.tagName === 'INPUT' && ev.target.type === 'number'){
@@ -807,19 +823,104 @@ document.addEventListener('focusin', function(ev){
   }
 });
 
-document.getElementById('gateForm').addEventListener('submit', function(ev){
-  ev.preventDefault();
-  const pw = document.getElementById('gatePw');
-  if(pw.value === GATE_PW){
-    localStorage.setItem(GATE_KEY,'1');
-    openApp();
-  } else {
-    document.getElementById('gateErr').textContent = '密碼不對，再試一次';
-    pw.value = '';
-  }
-});
+// ---- Firebase 雲端同步 + 登入（多人共用同一份資料，比照 cloud-ledger-automation skill）----
+const HAS_FB = typeof firebase !== 'undefined';
+let auth = null, db = null, fbUser = null;
+function rolmieDocRef(){ return db.collection('rolmieTax').doc('shared'); }
 
-if(localStorage.getItem(GATE_KEY) === '1'){
+function setCloudPill(on, msg){
+  const dot = document.getElementById('cloudPill');
+  const txt = document.getElementById('cloudPillText');
+  if(!dot || !txt) return;
+  dot.classList.toggle('on', !!on);
+  txt.textContent = msg || (on ? '雲端同步中' : '離線');
+}
+function showAuthGate(show){
+  const g = document.getElementById('auth-gate');
+  if(g) g.style.display = show ? 'flex' : 'none';
+}
+async function cloudLoad(){
+  try{
+    const snap = await rolmieDocRef().get();
+    if(snap.exists && snap.data() && snap.data().companies){
+      DATA = snap.data();
+      normalizeData();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
+    } else {
+      // 第一次：把目前（本機/預設）資料推上雲，之後大家看到同一份
+      await rolmieDocRef().set(DATA);
+    }
+    setCloudPill(true);
+  }catch(e){ setCloudPill(false, '離線（沿用本機快取）'); }
+}
+async function cloudRefresh(){
+  if(!fbUser){ alert('尚未登入'); return; }
+  await cloudLoad();
+  renderAll();
+}
+function doSignOut(){
+  if(!confirm('要登出嗎？資料已存雲端，下次用密碼登入即可。')) return;
+  auth.signOut();
+}
+
+function openApp(){
+  document.getElementById('app').style.display = 'block';
+  load(); renderAll();
+}
+
+if(HAS_FB){
+  firebase.initializeApp({
+    apiKey: 'AIzaSyDEqw-2W7yQSVJTw3cASImczMGLlHzjO5E',
+    authDomain: 'claude-ai-8e10f.firebaseapp.com',
+    projectId: 'claude-ai-8e10f',
+    storageBucket: 'claude-ai-8e10f.firebasestorage.app',
+    messagingSenderId: '767463505181',
+    appId: '1:767463505181:web:2075ef8c76b59f88f235f4'
+  });
+  auth = firebase.auth();
+  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
+  db = firebase.firestore();
+  db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+
+  document.getElementById('authForm').addEventListener('submit', async function(ev){
+    ev.preventDefault();
+    document.getElementById('authErr').textContent = '登入中…';
+    const email = document.getElementById('authEmail').value.trim();
+    const pw = document.getElementById('authPw').value;
+    try{ await auth.signInWithEmailAndPassword(email, pw); }
+    catch(e){
+      document.getElementById('authErr').textContent = '帳號或密碼不對，再試一次';
+      document.getElementById('authPw').value = '';
+    }
+  });
+
+  auth.onAuthStateChanged(async function(user){
+    fbUser = user;
+    if(user){
+      showAuthGate(false);
+      load(); // 先用本機快取畫面立刻可用
+      document.getElementById('app').style.display = 'block';
+      renderAll();
+      await cloudLoad();
+      renderAll();
+    } else {
+      showAuthGate(true);
+      setCloudPill(false);
+      document.getElementById('app').style.display = 'none';
+      const pw = document.getElementById('authPw');
+      if(pw){ pw.value=''; pw.focus(); }
+    }
+  });
+
+  // 回到前景時從雲端重抓，讓另一台裝置剛存的資料能顯示出來
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && fbUser){
+      cloudLoad().then(renderAll);
+    }
+  });
+} else {
+  // Firebase 載入失敗（例如離線）→ 退回純本機版，App 仍可用
+  showAuthGate(false);
   openApp();
 }
 </script>
