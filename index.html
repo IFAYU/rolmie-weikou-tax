@@ -567,7 +567,7 @@ function companyOverviewCard(key, c, t, isTurn){
     <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}<span class="balance-badge"><span class="bl">留底結餘</span>${fmtPlain(companyCurrentBalance(c))}</span><span class="balance-badge"><span class="bl">還可開約</span>${fmtPlain(estimatedIssuable(companyCurrentBalance(c)))}</span></h2>
     <div class="summary-grid">
       <div class="stat"><div class="lbl">目前總計營業額</div><div class="val">${fmtPlain(companyRevenue(c))}</div></div>
-      <div class="stat"><div class="lbl">預計書審率<span class="note">每年可能不同，自行調整；填 10 代表 10%</span></div>
+      <div class="stat"><div class="lbl">預計書審率<span class="note">需自行調整；填 10 代表 10%</span></div>
         <input type="number" class="rate-input" step="0.1" value="${c.profitRate*100}" onchange="updateProfitRatePercent('${key}',this.value)"></div>
       <div class="stat"><div class="lbl">預計個人所得總額</div><div class="val">${fmtPlain(t.total)}</div></div>
       <div class="stat"><div class="lbl">預計應納稅額</div><div class="val small" style="color:var(--danger)">${fmtPlain(t.final)}</div></div>
