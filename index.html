@@ -567,8 +567,8 @@ function companyOverviewCard(key, c, t, isTurn){
     <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}<span class="balance-badge"><span class="bl">留底結餘</span>${fmtPlain(companyCurrentBalance(c))}</span><span class="balance-badge"><span class="bl">還可開約</span>${fmtPlain(estimatedIssuable(companyCurrentBalance(c)))}</span></h2>
     <div class="summary-grid">
       <div class="stat"><div class="lbl">目前總計營業額</div><div class="val">${fmtPlain(companyRevenue(c))}</div></div>
-      <div class="stat"><div class="lbl">預計書審率<span class="note">每年可能不同，自行調整</span></div>
-        <input type="number" class="rate-input" step="0.01" value="${c.profitRate}" onchange="DATA.companies['${key}'].profitRate=+this.value;save();renderAll();"></div>
+      <div class="stat"><div class="lbl">預計書審率<span class="note">每年可能不同，自行調整；填 10 代表 10%</span></div>
+        <input type="number" class="rate-input" step="0.1" value="${c.profitRate*100}" onchange="updateProfitRatePercent('${key}',this.value)"></div>
       <div class="stat"><div class="lbl">預計個人所得總額</div><div class="val">${fmtPlain(t.total)}</div></div>
       <div class="stat"><div class="lbl">預計應納稅額</div><div class="val small" style="color:var(--danger)">${fmtPlain(t.final)}</div></div>
     </div>
@@ -588,8 +588,8 @@ function companyOverviewCard(key, c, t, isTurn){
         <input type="number" value="${c.rewardBonus}" onchange="DATA.companies['${key}'].rewardBonus=+this.value;save();renderAll();">
       </div>
       <div class="row">
-        <span class="lbl">推計淨利率</span>
-        <input type="number" step="0.01" value="${c.profitRate}" onchange="DATA.companies['${key}'].profitRate=+this.value;save();renderAll();">
+        <span class="lbl">預計書審率<span class="note">填 10 代表 10%</span></span>
+        <input type="number" step="0.1" value="${c.profitRate*100}" onchange="updateProfitRatePercent('${key}',this.value)">
       </div>
     </details>
 
@@ -612,6 +612,11 @@ function updateMonthField(key, i, field, idx, val){
 }
 function updateMonthExtra(key, i, val){
   DATA.companies[key].months[i].extra = +val || 0;
+  save(); renderAll();
+}
+// 輸入框顯示/輸入的是百分比數字（填10代表10%），內部還是存小數方便計算
+function updateProfitRatePercent(key, percentVal){
+  DATA.companies[key].profitRate = (+percentVal || 0) / 100;
   save(); renderAll();
 }
 function clearMonth(key, i){
