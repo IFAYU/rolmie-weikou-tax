@@ -77,7 +77,8 @@
 
   .row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid var(--line);}
   .row:last-child{border-bottom:none;}
-  .row .lbl{font-size:13.5px; color:#5b5346; flex-shrink:0;}
+  .row .lbl{font-size:13.5px; color:#5b5346; flex:1 1 auto; min-width:0;}
+  .row input[type=number], .row .readonly{flex-shrink:0;}
   .row .lbl .note{display:block; font-size:11px; color:var(--sub); font-weight:400;}
   .row input[type=number]{
     width:130px; text-align:right; font-size:14.5px; padding:7px 9px;
