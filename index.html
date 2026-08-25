@@ -722,7 +722,7 @@ function renderTaxPanel(key){
     <summary>💡 說明（點擊展開）</summary>
     <div class="hint-body">
       ${c.name} 綜所稅試算，公式與原 Excel 一致：<br>
-      綜合所得總額 = 扣憑獎勵金 ＋ 營業額 × 推計淨利率<br>
+      綜合所得總額 = 扣憑獎勵金 ＋ 營業額 × 書審率（課稅所得額）<br>
       綜合所得淨額 = 總額 － 免稅額 － 扣除額（捐贈）－ 特別扣除額<br>
       應納稅額 = 綜合所得淨額 × 稅率 － 累進差額（取自114年度速算公式）
     </div>
@@ -731,7 +731,7 @@ function renderTaxPanel(key){
   <div class="card ${accent}">
     <h2><span class="accent-dot"></span>綜合所得總額</h2>
     <div class="row"><span class="lbl">扣憑獎勵金</span><span class="readonly">${fmtPlain(c.rewardBonus)}</span></div>
-    <div class="row"><span class="lbl">推計執行業務所得</span><span class="readonly">${fmtPlain(companyEstimatedProfit(c))}</span></div>
+    <div class="row"><span class="lbl">課稅所得額</span><span class="readonly">${fmtPlain(companyEstimatedProfit(c))}</span></div>
     <div class="row"><span class="lbl">綜合所得總額</span><span class="readonly">${fmtPlain(t.total)}</span></div>
   </div>
 
