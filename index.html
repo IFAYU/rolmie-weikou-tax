@@ -69,12 +69,17 @@
     display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px;
     background:var(--warn-bg); color:#8a6a2f; margin-left:6px; vertical-align:middle;
   }
+  .balance-badge{
+    display:inline-block; font-size:14px; font-weight:800; color:var(--ink);
+    margin-left:6px; vertical-align:middle; white-space:nowrap;
+  }
+  .balance-badge .bl{font-size:10.5px; font-weight:400; color:var(--sub); margin-right:2px;}
 
   .card{
     background:var(--card); border:1px solid var(--line); border-radius:16px;
     padding:16px; margin-bottom:14px;
   }
-  .card h2{font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px;}
+  .card h2{font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .accent-dot{width:9px; height:9px; border-radius:50%; display:inline-block;}
   .luoli .accent-dot, .accent-luoli{background:var(--luoli);}
   .weikou .accent-dot, .accent-weikou{background:var(--weikou);}
@@ -191,8 +196,11 @@
     </div>
   </header>
 
-  <!-- ================= OVERVIEW ================= -->
-  <section class="panel active" id="panel-overview"></section>
+  <!-- ================= OVERVIEW (蘿荔/薇蔻 子選單) ================= -->
+  <section class="panel active" id="panel-overview">
+    <div class="subtabs" id="overview-subtabs"></div>
+    <div id="overview-content"></div>
+  </section>
 
   <!-- ================= TAX (蘿荔/薇蔻 子選單) ================= -->
   <section class="panel" id="panel-tax">
@@ -209,7 +217,6 @@
 
 <script>
 const STORAGE_KEY = 'rolmie.weikou.tax.v2';
-const RETAIN_MONTHS = 16; // 跨年度留底延續：固定保留最近16個月明細，更早的月份會把差額併入 carryInBalance 再刪除
 const BRACKETS = [
   {min:0,       max:590000,   rate:0.05, diff:0,      label:'0 ~ 590,000'},
   {min:590001,  max:1330000,  rate:0.12, diff:41300,  label:'590,001 ~ 1,330,000'},
@@ -272,14 +279,16 @@ function migrateMonth(mo){
   return mo;
 }
 function load(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  let changed = !raw;
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      DATA = JSON.parse(raw);
-      Object.values(DATA.companies).forEach(c => c.months.forEach(migrateMonth));
-    }
-    else { DATA = defaultData(); save(); }
-  }catch(e){ DATA = defaultData(); }
+    DATA = raw ? JSON.parse(raw) : defaultData();
+  }catch(e){ DATA = defaultData(); changed = true; }
+  Object.values(DATA.companies).forEach(c => {
+    c.months.forEach(migrateMonth);
+    if(autoAdvanceYear(c)) changed = true;
+  });
+  if(changed) save();
 }
 function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
@@ -360,28 +369,43 @@ function companyOrder(){
   return turn === 'luoli' ? ['luoli','weikou'] : ['weikou','luoli'];
 }
 
-// ---- Render: Overview ----
-function renderOverview(){
-  const el = document.getElementById('panel-overview');
+// ---- Render: Overview（跟綜所稅試算一樣用蘿荔/薇蔻子選單，不用兩家都攤開） ----
+let currentOverviewCompany = null;
+
+function renderOverviewSubtabs(){
+  const el = document.getElementById('overview-subtabs');
+  const order = companyOrder();
+  el.innerHTML = order.map(key=>{
+    const c = DATA.companies[key];
+    const active = key===currentOverviewCompany;
+    const isTurn = key===order[0];
+    return `<div class="subtab ${active?'active '+key:''}" onclick="selectOverviewCompany('${key}')">${c.name}${isTurn?' 📌':''}</div>`;
+  }).join('');
+}
+function selectOverviewCompany(key){
+  currentOverviewCompany = key;
+  renderOverviewSubtabs();
+  renderOverviewContent(key);
+}
+function renderOverviewContent(key){
+  const el = document.getElementById('overview-content');
   const order = companyOrder();
   const turn = order[0];
   const turnName = DATA.companies[turn].name;
+  const c = DATA.companies[key];
 
   let html = `
   <details class="collapsible hint-collapsible">
     <summary>💡 說明 · 本月該填 <b>${turnName}</b>（點擊展開）</summary>
     <div class="hint-body">
       目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
-      月份明細固定保留最近 ${RETAIN_MONTHS} 個月（今年12個月＋明年前4個月），跨年度時留底結餘會自動接續，
-      捲出視窗的舊月份會先把差額併入「留底結餘」再刪除明細，不會漏算。<br>
-      📌 本月（1.2/5.6/9.10月薇蔻，3.4/7.8/11.12月蘿荔）該填進貨發票的是<b>${turnName}</b>，已自動排到最上面。
+      月份明細顯示計稅年度整年12個月＋隔年1~4月，跨年度時留底結餘會自動接續；
+      一旦真實日期超過隔年4月底，去年整年明細會自動併入「留底結餘」後從畫面消失，總額不會漏算，只是不再顯示逐月明細。<br>
+      📌 本月（1.2/5.6/9.10月薇蔻，3.4/7.8/11.12月蘿荔）該填進貨發票的是<b>${turnName}</b>，已自動排到最前面。
     </div>
   </details>`;
 
-  order.forEach(key=>{
-    const c = DATA.companies[key];
-    html += companyOverviewCard(key, c, taxCalc(c), key===turn);
-  });
+  html += companyOverviewCard(key, c, taxCalc(c), key===turn);
 
   el.innerHTML = html;
 }
@@ -437,20 +461,19 @@ function companyOverviewCard(key, c, t, isTurn){
 
   return `
   <div class="card ${accent}">
-    <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}</h2>
+    <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}<span class="balance-badge"><span class="bl">留底結餘</span>${fmtPlain(companyCurrentBalance(c))}</span></h2>
     <div class="summary-grid">
       <div class="stat"><div class="lbl">目前總計營業額</div><div class="val">${fmtPlain(companyRevenue(c))}</div></div>
       <div class="stat"><div class="lbl">推計執行業務所得（×${(c.profitRate*100).toFixed(0)}%）</div><div class="val small">${fmtPlain(companyEstimatedProfit(c))}</div></div>
       <div class="stat"><div class="lbl">預計個人所得總額</div><div class="val">${fmtPlain(t.total)}</div></div>
       <div class="stat"><div class="lbl">預計應納稅額</div><div class="val small" style="color:var(--danger)">${fmtPlain(t.final)}</div></div>
-      <div class="stat wide"><div class="lbl">目前留底結餘</div><div class="val">${fmtPlain(companyCurrentBalance(c))}</div></div>
     </div>
 
     <details class="collapsible settings-collapsible" style="margin-top:10px;">
       <summary>⚙️ 設定（計稅年度／留底起點／扣憑獎勵金／淨利率，點擊展開編輯）</summary>
       <div class="row" style="margin-top:8px;">
-        <span class="lbl">計稅年度<span class="note">目前總計營業額只加總這一年的12個月</span></span>
-        <input type="number" value="${c.taxYear}" onchange="DATA.companies['${key}'].taxYear=+this.value;save();renderAll();">
+        <span class="lbl">計稅年度<span class="note">目前總計營業額只加總這一年的12個月；改這裡會重建下方月份視窗</span></span>
+        <input type="number" value="${c.taxYear}" onchange="setTaxYear('${key}',+this.value)">
       </div>
       <div class="row">
         <span class="lbl">留底結餘（視窗起點）<span class="note">併入最舊保留月份之前的累積結餘，相當於原表「去年留底金額」</span></span>
@@ -466,9 +489,8 @@ function companyOverviewCard(key, c, t, isTurn){
       </div>
     </details>
 
-    <h2 style="margin-top:14px;">🧾 月份明細（點開編輯，固定捲動保留${RETAIN_MONTHS}個月）</h2>
+    <h2 style="margin-top:14px;">🧾 月份明細（點開編輯，顯示計稅年度整年＋隔年1~4月；過了隔年4月，去年整年會自動併入留底結餘並消失）</h2>
     ${monthsHtml}
-    <button class="addbtn" onclick="addNextMonth('${key}')">＋ 新增下一個月（自動接續年月，滿${RETAIN_MONTHS}個月會把最舊一筆併入留底結餘）</button>
 
     <h2 style="margin-top:14px;">🎁 捐贈收據</h2>
     ${donHtml}
@@ -480,17 +502,36 @@ function updateMonthField(key, i, field, idx, val){
   DATA.companies[key].months[i][field][idx] = +val || 0;
   save(); renderAll();
 }
-function addNextMonth(key){
-  const c = DATA.companies[key];
-  const last = c.months[c.months.length-1];
-  let y = last.year, m = last.month + 1;
-  if(m > 12){ m = 1; y += 1; }
-  c.months.push(emptyMonth(y, m));
-  while(c.months.length > RETAIN_MONTHS){
-    const oldest = c.months.shift();
-    c.carryInBalance = (+c.carryInBalance||0) + monthPurchaseTotal(oldest) - monthRevenue(oldest);
-  }
+// 把月份明細重建成「newYear全年12個月 + newYear+1的1~4月」共16個月的視窗，
+// 原本視窗內還在新範圍的月份資料原封不動保留，範圍外的月份把差額併入留底結餘再捨棄
+function rebuildWindowForYear(c, newYear){
+  const keepMap = {};
+  c.months.forEach(mo=>{
+    const inRange = (mo.year===newYear) || (mo.year===newYear+1 && mo.month<=4);
+    if(inRange){ keepMap[mo.year+'-'+mo.month] = mo; }
+    else { c.carryInBalance = (+c.carryInBalance||0) + monthPurchaseTotal(mo) - monthRevenue(mo); }
+  });
+  const months = [];
+  for(let m=1;m<=12;m++) months.push(keepMap[newYear+'-'+m] || emptyMonth(newYear,m));
+  for(let m=1;m<=4;m++) months.push(keepMap[(newYear+1)+'-'+m] || emptyMonth(newYear+1,m));
+  c.taxYear = newYear;
+  c.months = months;
+}
+function setTaxYear(key, newYear){
+  rebuildWindowForYear(DATA.companies[key], newYear);
   save(); renderAll();
+}
+// 依裝置目前實際日期自動判斷：一旦真實時間超過「計稅年度+1」的4月底，
+// 去年整年份的明細就自動併入留底結餘、從畫面上消失（總額不會少算，只是不再顯示逐月明細）
+function autoAdvanceYear(c){
+  const now = new Date();
+  const ry = now.getFullYear(), rm = now.getMonth()+1;
+  let changed = false;
+  while(ry > c.taxYear+1 || (ry === c.taxYear+1 && rm > 4)){
+    rebuildWindowForYear(c, c.taxYear+1);
+    changed = true;
+  }
+  return changed;
 }
 function addDonation(key){
   DATA.companies[key].donations.push({amount:0, note:''});
@@ -535,12 +576,21 @@ function renderTaxPanel(key){
     </tr>`).join('');
 
   el.innerHTML = `
-  <div class="hintbox">
-    ${c.name} 綜所稅試算，公式與原 Excel 一致：<br>
-    綜合所得總額 = 扣憑獎勵金 ＋ 營業額 × 推計淨利率<br>
-    綜合所得淨額 = 總額 － 免稅額 － 扣除額（捐贈）－ 特別扣除額<br>
-    應納稅額 = 綜合所得淨額 × 稅率 － 累進差額（取自114年度速算公式）
+  <div class="final-box">
+    <div class="lbl">${t.final>=0 ? '預估應納稅額' : '預估退稅金額'}</div>
+    <div class="val">${fmt(Math.abs(t.final))}</div>
+    <div class="sub">綜合所得淨額 ${fmtPlain(t.net)} × ${(t.rate*100).toFixed(0)}% － 累進差額 ${fmtPlain(t.diff)}</div>
   </div>
+
+  <details class="collapsible hint-collapsible" style="margin-top:12px;">
+    <summary>💡 說明（點擊展開）</summary>
+    <div class="hint-body">
+      ${c.name} 綜所稅試算，公式與原 Excel 一致：<br>
+      綜合所得總額 = 扣憑獎勵金 ＋ 營業額 × 推計淨利率<br>
+      綜合所得淨額 = 總額 － 免稅額 － 扣除額（捐贈）－ 特別扣除額<br>
+      應納稅額 = 綜合所得淨額 × 稅率 － 累進差額（取自114年度速算公式）
+    </div>
+  </details>
 
   <div class="card ${accent}">
     <h2><span class="accent-dot"></span>綜合所得總額</h2>
@@ -588,12 +638,6 @@ function renderTaxPanel(key){
     <div class="row"><span class="lbl">股利或盈餘可抵減稅額</span>
       <input type="number" value="${c.tax.dividendCredit}" onchange="DATA.companies['${key}'].tax.dividendCredit=+this.value;save();renderAll();"></div>
   </div>
-
-  <div class="final-box">
-    <div class="lbl">${t.final>=0 ? '預估應納稅額' : '預估退稅金額'}</div>
-    <div class="val">${fmt(Math.abs(t.final))}</div>
-    <div class="sub">綜合所得淨額 ${fmtPlain(t.net)} × ${(t.rate*100).toFixed(0)}% － 累進差額 ${fmtPlain(t.diff)}</div>
-  </div>
   `;
 }
 
@@ -604,7 +648,9 @@ function switchTab(name){
 
 function renderAll(){
   if(!currentTaxCompany) currentTaxCompany = companyOrder()[0];
-  renderOverview();
+  if(!currentOverviewCompany) currentOverviewCompany = companyOrder()[0];
+  renderOverviewSubtabs();
+  renderOverviewContent(currentOverviewCompany);
   renderTaxSubtabs();
   renderTaxPanel(currentTaxCompany);
 }
