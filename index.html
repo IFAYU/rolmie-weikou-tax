@@ -134,6 +134,7 @@
   details.hint-collapsible > summary{color:#8a6a2f;}
   details.hint-collapsible .hint-body{font-size:12.5px; line-height:1.6; color:#6b5a3a; margin-top:8px;}
   details.settings-collapsible > summary{padding:4px 2px;}
+  .mini-note{font-size:11.5px; color:var(--sub); line-height:1.6; padding:4px 2px 0;}
 
   .mgrid-wrap{overflow-x:auto; margin-top:6px;}
   table.mgrid{width:100%; border-collapse:collapse; min-width:280px;}
@@ -280,15 +281,17 @@ function migrateMonth(mo){
 }
 function load(){
   const raw = localStorage.getItem(STORAGE_KEY);
-  let changed = !raw;
   try{
     DATA = raw ? JSON.parse(raw) : defaultData();
-  }catch(e){ DATA = defaultData(); changed = true; }
+  }catch(e){ DATA = defaultData(); }
   Object.values(DATA.companies).forEach(c => {
     c.months.forEach(migrateMonth);
-    if(autoAdvanceYear(c)) changed = true;
+    // 保險：不管過去用什麼方式改過 taxYear，載入時一律強制讓月份陣列對齊 taxYear（12個月＋隔年1~4月）。
+    // 這是 idempotent 操作——已經對齊的話不會動到任何資料。
+    rebuildWindowForYear(c, c.taxYear);
+    autoAdvanceYear(c);
   });
-  if(changed) save();
+  save();
 }
 function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
@@ -489,7 +492,11 @@ function companyOverviewCard(key, c, t, isTurn){
       </div>
     </details>
 
-    <h2 style="margin-top:14px;">🧾 月份明細（點開編輯，顯示計稅年度整年＋隔年1~4月；過了隔年4月，去年整年會自動併入留底結餘並消失）</h2>
+    <h2 style="margin-top:14px;">🧾 月份明細</h2>
+    <details class="collapsible" style="margin-bottom:8px;">
+      <summary>說明（點擊展開）</summary>
+      <div class="mini-note">點開每個月可編輯；顯示計稅年度整年＋隔年1~4月；過了隔年4月，去年整年會自動併入留底結餘並消失。</div>
+    </details>
     ${monthsHtml}
 
     <h2 style="margin-top:14px;">🎁 捐贈收據</h2>
