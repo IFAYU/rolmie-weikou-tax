@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="蘿荔薇蔻稅算">
+<meta name="theme-color" content="#f6f4f0">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%F0%9F%A7%BE</text></svg>">
+<title>蘿荔 × 薇蔻 業績與綜所稅試算</title>
+<style>
+  :root{
+    --luoli:#B8925A;
+    --weikou:#3E7C8C;
+    --bg:#f6f4f0;
+    --card:#ffffff;
+    --ink:#2b2620;
+    --sub:#847c6f;
+    --line:#e8e2d8;
+    --danger:#c0392b;
+    --good:#2f7d4f;
+    --warn-bg:#fff7e6;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #gate{
+    position:fixed; inset:0; background:var(--bg); z-index:999;
+    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px;
+  }
+  #gate input{
+    font-size:22px; padding:12px 16px; border-radius:12px; border:1px solid var(--line);
+    text-align:center; letter-spacing:6px; width:200px;
+  }
+  #gate button{
+    font-size:16px; padding:10px 24px; border-radius:12px; border:none;
+    background:var(--ink); color:#fff;
+  }
+  #gate .hint{color:var(--sub); font-size:13px;}
+  #app{display:none; max-width:720px; margin:0 auto; padding-bottom:80px;}
+  header.top{
+    position:sticky; top:0; z-index:50; background:var(--bg);
+    padding:14px 16px 0; border-bottom:1px solid var(--line);
+  }
+  header.top h1{font-size:18px; margin:0 0 12px; font-weight:700;}
+  .tabs{display:flex; gap:6px;}
+  .tab{
+    flex:1; text-align:center; padding:10px 4px; border-radius:10px 10px 0 0;
+    font-size:13px; font-weight:600; color:var(--sub); cursor:pointer; background:transparent;
+    border:1px solid transparent; border-bottom:none;
+  }
+  .tab.active{background:var(--card); color:var(--ink); border-color:var(--line);}
+  .tab[data-tab="luoli"].active{box-shadow:inset 0 3px 0 var(--luoli);}
+  .tab[data-tab="weikou"].active{box-shadow:inset 0 3px 0 var(--weikou);}
+  section.panel{display:none; padding:16px;}
+  section.panel.active{display:block;}
+
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px;}
+  .accent-dot{width:9px; height:9px; border-radius:50%; display:inline-block;}
+  .luoli .accent-dot, .accent-luoli{background:var(--luoli);}
+  .weikou .accent-dot, .accent-weikou{background:var(--weikou);}
+
+  .summary-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .stat{background:var(--warn-bg); border-radius:12px; padding:10px 12px;}
+  .stat .lbl{font-size:11px; color:var(--sub); margin-bottom:4px;}
+  .stat .val{font-size:17px; font-weight:700;}
+  .stat .val.small{font-size:14px;}
+
+  .row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid var(--line);}
+  .row:last-child{border-bottom:none;}
+  .row .lbl{font-size:13.5px; color:#5b5346; flex-shrink:0;}
+  .row .lbl .note{display:block; font-size:11px; color:var(--sub); font-weight:400;}
+  .row input[type=number]{
+    width:130px; text-align:right; font-size:14.5px; padding:7px 9px;
+    border:1px solid var(--line); border-radius:8px; background:#fbfaf8;
+  }
+  .row input[type=number]:focus{outline:2px solid #ccc; background:#fff;}
+  .row .readonly{font-weight:700; font-size:14.5px;}
+  .row .readonly.danger{color:var(--danger);}
+  .row .readonly.good{color:var(--good);}
+
+  details.month{border-bottom:1px solid var(--line);}
+  details.month:last-child{border-bottom:none;}
+  details.month summary{
+    list-style:none; cursor:pointer; padding:10px 2px; display:flex; justify-content:space-between; align-items:center;
+  }
+  details.month summary::-webkit-details-marker{display:none;}
+  details.month summary .m{font-weight:600; font-size:13.5px;}
+  details.month summary .sum{font-size:13px; color:var(--sub);}
+  details.month .body{padding:0 2px 12px;}
+  .minirow{display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;}
+  .minirow input{width:110px; text-align:right; padding:5px 7px; border:1px solid var(--line); border-radius:7px; font-size:13px;}
+  .minirow .lbl{color:var(--sub);}
+  .outstanding{font-size:11.5px; margin-top:6px; padding:6px 8px; border-radius:8px; background:#fbeeee; color:var(--danger);}
+  .outstanding.ok{background:#eef7f1; color:var(--good);}
+
+  .donation-item{display:flex; gap:8px; align-items:center; padding:6px 0;}
+  .donation-item input[type=number]{flex:1; text-align:right; padding:6px 8px; border:1px solid var(--line); border-radius:7px;}
+  .donation-item input[type=text]{width:90px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; font-size:12.5px;}
+  .donation-item button{border:none; background:#f1eae0; color:var(--sub); border-radius:7px; width:28px; height:28px; font-size:14px;}
+  .addbtn{margin-top:8px; border:1px dashed var(--line); background:transparent; color:var(--sub); border-radius:8px; padding:7px 12px; font-size:12.5px; width:100%;}
+
+  .bracket-table{width:100%; border-collapse:collapse; font-size:12px; margin-top:6px;}
+  .bracket-table th, .bracket-table td{border:1px solid var(--line); padding:6px 5px; text-align:center;}
+  .bracket-table tr.hit{background:var(--warn-bg); font-weight:700;}
+  .switch-row{display:flex; align-items:center; justify-content:space-between; padding:8px 0;}
+  .switch-row label{font-size:12.5px; color:var(--sub);}
+  .final-box{
+    margin-top:4px; padding:14px; border-radius:14px; text-align:center;
+    background:linear-gradient(135deg, #2b2620, #4a4136); color:#fff;
+  }
+  .final-box .lbl{font-size:12px; opacity:.75; margin-bottom:4px;}
+  .final-box .val{font-size:26px; font-weight:800;}
+  .final-box .sub{font-size:11px; opacity:.7; margin-top:4px;}
+
+  .footerbar{
+    position:fixed; bottom:0; left:0; right:0; background:var(--card); border-top:1px solid var(--line);
+    display:flex; padding:8px 12px env(safe-area-inset-bottom); gap:8px; max-width:720px; margin:0 auto;
+  }
+  .footerbar button{
+    flex:1; padding:10px; border-radius:10px; border:1px solid var(--line); background:#fbfaf8; font-size:12.5px; color:var(--sub);
+  }
+  .hintbox{font-size:11.5px; color:var(--sub); background:#f1eee7; border-radius:10px; padding:9px 11px; margin-bottom:12px; line-height:1.5;}
+  input[readonly]{background:#f1eee7; color:var(--sub);}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div style="font-size:15px;font-weight:700;">蘿荔 × 薇蔻 業績與綜所稅試算</div>
+  <input id="gateInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
+  <button onclick="tryUnlock()">解鎖</button>
+  <div class="hint">忘記密碼請找 IFAYU</div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <h1>蘿荔 × 薇蔻｜業績與綜所稅試算</h1>
+    <div class="tabs">
+      <div class="tab active" data-tab="overview" onclick="switchTab('overview')">📒 業績總表</div>
+      <div class="tab" data-tab="luoli" onclick="switchTab('luoli')">🟤 蘿荔綜所稅</div>
+      <div class="tab" data-tab="weikou" onclick="switchTab('weikou')">🔵 薇蔻綜所稅</div>
+    </div>
+  </header>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section class="panel active" id="panel-overview"></section>
+
+  <!-- ================= LUOLI TAX ================= -->
+  <section class="panel" id="panel-luoli"></section>
+
+  <!-- ================= WEIKOU TAX ================= -->
+  <section class="panel" id="panel-weikou"></section>
+
+  <div class="footerbar">
+    <button onclick="exportBackup()">⬇️ 匯出備份</button>
+    <button onclick="document.getElementById('importFile').click()">⬆️ 匯入備份</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importBackup(event)">
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'rolmie.weikou.tax.v1';
+const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12];
+const BRACKETS = [
+  {min:0,       max:590000,   rate:0.05, diff:0,      label:'0 ~ 590,000'},
+  {min:590001,  max:1330000,  rate:0.12, diff:41300,  label:'590,001 ~ 1,330,000'},
+  {min:1330001, max:2660000,  rate:0.20, diff:147700, label:'1,330,001 ~ 2,660,000'},
+  {min:2660001, max:4980000,  rate:0.30, diff:413700, label:'2,660,001 ~ 4,980,000'},
+  {min:4980001, max:Infinity, rate:0.40, diff:911700, label:'4,980,001 以上'},
+];
+const EXEMPTION_PER_PERSON = 97000;
+
+function emptyMonths(){
+  return MONTHS.map(m => ({ m, purchase:0, rebates:[0,0,0,0,0], issued:0 }));
+}
+
+function defaultData(){
+  return {
+    carryoverLastYear: 119334, // 去年留底金額(共用)
+    companies: {
+      luoli: {
+        name: '蘿荔企業社',
+        profitRate: 0.10,
+        priorRevenue: 6161098,   // 匯入前累計營業額(含歷史月份，尚未逐月匯入明細)
+        rewardBonus: 1140000,    // 扣憑獎勵金
+        donations: [ {amount:98000, note:'114年捐贈收據'} ],
+        months: emptyMonths(),
+        tax: { exemptionCount:5, specialDeduction:150000, withheldTax:0, dividendCredit:0, manualBracket:false, manualRate:0.20, manualDiff:147700 }
+      },
+      weikou: {
+        name: '薇蔻企業社',
+        profitRate: 0.06,
+        priorRevenue: 6009294,
+        rewardBonus: 0,
+        donations: [ {amount:50000, note:'114年捐贈收據'} ],
+        months: emptyMonths(),
+        tax: { exemptionCount:2, specialDeduction:0, withheldTax:0, dividendCredit:0, manualBracket:false, manualRate:0.05, manualDiff:0 }
+      }
+    }
+  };
+}
+
+let DATA = null;
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){ DATA = JSON.parse(raw); }
+    else { DATA = defaultData(); save(); }
+  }catch(e){ DATA = defaultData(); }
+}
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA));
+}
+
+function fmt(n){
+  n = Math.round(n||0);
+  return 'NT$ ' + n.toLocaleString('zh-Hant-TW');
+}
+function fmtPlain(n){
+  n = Math.round(n||0);
+  return n.toLocaleString('zh-Hant-TW');
+}
+
+// ---- 計算核心 ----
+function monthRevenue(mo){
+  return (mo.rebates||[0,0,0,0,0]).reduce((a,b)=>a+(+b||0),0) + (+mo.issued||0);
+}
+function monthOutstanding(mo){
+  return (+mo.purchase||0) - monthRevenue(mo);
+}
+function companyRevenue(c){
+  const monthsTotal = c.months.reduce((a,mo)=>a+monthRevenue(mo),0);
+  return (+c.priorRevenue||0) + monthsTotal;
+}
+function companyEstimatedProfit(c){
+  return companyRevenue(c) * c.profitRate;
+}
+function companyTotalIncome(c){ // 綜合所得總額 = 扣憑獎勵金 + 執行業務所得(推計)
+  return (+c.rewardBonus||0) + companyEstimatedProfit(c);
+}
+function companyDonationTotal(c){
+  return (c.donations||[]).reduce((a,d)=>a+(+d.amount||0),0);
+}
+function lookupBracket(net){
+  return BRACKETS.find(b => net >= b.min && net <= b.max) || BRACKETS[0];
+}
+function taxCalc(c){
+  const total = companyTotalIncome(c);
+  const exemption = EXEMPTION_PER_PERSON * (+c.tax.exemptionCount||0);
+  const deduction = companyDonationTotal(c);
+  const special = +c.tax.specialDeduction||0;
+  let net = total - exemption - deduction - special;
+  if(net < 0) net = 0;
+  const auto = lookupBracket(net);
+  const rate = c.tax.manualBracket ? (+c.tax.manualRate||0) : auto.rate;
+  const diff = c.tax.manualBracket ? (+c.tax.manualDiff||0) : auto.diff;
+  let due = Math.floor(net*rate - diff);
+  if(due < 0) due = 0;
+  const withheld = +c.tax.withheldTax||0;
+  const credit = +c.tax.dividendCredit||0;
+  const final = due - withheld - credit;
+  return {total, exemption, deduction, special, net, auto, rate, diff, due, withheld, credit, final};
+}
+
+// ---- Render: Overview ----
+function renderOverview(){
+  const el = document.getElementById('panel-overview');
+  const L = DATA.companies.luoli, W = DATA.companies.weikou;
+  const tL = taxCalc(L), tW = taxCalc(W);
+
+  let html = `
+  <div class="hintbox">
+    💡「匯入前累計營業額」是舊試算表既有的年度累計數字（尚未逐月拆解匯入這裡）；下方每月明細記的是<b>之後</b>新增的進貨發票／返傭／開立發票，兩者加總＝目前總計營業額。捐贈、扣憑獎勵金、留底金額都可以直接改，會即時影響兩家的綜所稅試算。
+  </div>`;
+
+  html += companyOverviewCard('luoli', L, tL);
+  html += companyOverviewCard('weikou', W, tW);
+
+  html += `<div class="card">
+    <h2>🗓️ 去年留底金額（共用）</h2>
+    <div class="row"><span class="lbl">去年留底營業稅金額<span class="note">對應原表 L15</span></span>
+      <input type="number" value="${DATA.carryoverLastYear}" onchange="DATA.carryoverLastYear=+this.value;save();renderAll();"></div>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
+function companyOverviewCard(key, c, t){
+  const accent = key==='luoli' ? 'luoli' : 'weikou';
+  let monthsHtml = '';
+  c.months.forEach((mo,i)=>{
+    const rev = monthRevenue(mo);
+    const out = monthOutstanding(mo);
+    monthsHtml += `
+    <details class="month">
+      <summary>
+        <span class="m">${mo.m} 月</span>
+        <span class="sum">營業額 ${fmtPlain(rev)}</span>
+      </summary>
+      <div class="body">
+        <div class="minirow"><span class="lbl">進貨發票</span><input type="number" value="${mo.purchase}" onchange="updateMonth('${key}',${i},'purchase',this.value)"></div>
+        ${mo.rebates.map((r,ri)=>`<div class="minirow"><span class="lbl">返傭${ri+1}</span><input type="number" value="${r}" onchange="updateRebate('${key}',${i},${ri},this.value)"></div>`).join('')}
+        <div class="minirow"><span class="lbl">開立發票</span><input type="number" value="${mo.issued}" onchange="updateMonth('${key}',${i},'issued',this.value)"></div>
+        <div class="outstanding ${out<=0?'ok':''}">${out>0 ? `留底未開發票約 ${fmtPlain(out)}` : `已開立齊全（無留底 ${out<0?'，超開 '+fmtPlain(-out):''}）`}</div>
+      </div>
+    </details>`;
+  });
+
+  let donHtml = '';
+  c.donations.forEach((d,i)=>{
+    donHtml += `<div class="donation-item">
+      <input type="text" placeholder="備註" value="${d.note||''}" onchange="updateDonation('${key}',${i},'note',this.value)">
+      <input type="number" value="${d.amount}" onchange="updateDonation('${key}',${i},'amount',this.value)">
+      <button onclick="removeDonation('${key}',${i})">✕</button>
+    </div>`;
+  });
+
+  return `
+  <div class="card ${accent}">
+    <h2><span class="accent-dot"></span>${c.name}</h2>
+    <div class="summary-grid">
+      <div class="stat"><div class="lbl">目前總計營業額</div><div class="val">${fmtPlain(companyRevenue(c))}</div></div>
+      <div class="stat"><div class="lbl">推計執行業務所得（×${(c.profitRate*100).toFixed(0)}%）</div><div class="val small">${fmtPlain(companyEstimatedProfit(c))}</div></div>
+      <div class="stat"><div class="lbl">預計個人所得總額</div><div class="val">${fmtPlain(t.total)}</div></div>
+      <div class="stat"><div class="lbl">預計應納稅額</div><div class="val small" style="color:var(--danger)">${fmtPlain(t.final)}</div></div>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <span class="lbl">匯入前累計營業額<span class="note">舊表既有數字，之後靠下方月份累加</span></span>
+      <input type="number" value="${c.priorRevenue}" onchange="DATA.companies['${key}'].priorRevenue=+this.value;save();renderAll();">
+    </div>
+    <div class="row">
+      <span class="lbl">扣憑獎勵金</span>
+      <input type="number" value="${c.rewardBonus}" onchange="DATA.companies['${key}'].rewardBonus=+this.value;save();renderAll();">
+    </div>
+    <div class="row">
+      <span class="lbl">推計淨利率</span>
+      <input type="number" step="0.01" value="${c.profitRate}" onchange="DATA.companies['${key}'].profitRate=+this.value;save();renderAll();">
+    </div>
+
+    <h2 style="margin-top:14px;">🧾 月份明細（點開編輯）</h2>
+    ${monthsHtml}
+
+    <h2 style="margin-top:14px;">🎁 捐贈收據</h2>
+    ${donHtml}
+    <button class="addbtn" onclick="addDonation('${key}')">＋ 新增一筆捐贈</button>
+  </div>`;
+}
+
+function updateMonth(key, i, field, val){
+  DATA.companies[key].months[i][field] = +val || 0;
+  save(); renderAll();
+}
+function updateRebate(key, i, ri, val){
+  DATA.companies[key].months[i].rebates[ri] = +val || 0;
+  save(); renderAll();
+}
+function addDonation(key){
+  DATA.companies[key].donations.push({amount:0, note:''});
+  save(); renderAll();
+}
+function removeDonation(key, i){
+  DATA.companies[key].donations.splice(i,1);
+  save(); renderAll();
+}
+function updateDonation(key, i, field, val){
+  DATA.companies[key].donations[i][field] = field==='amount' ? (+val||0) : val;
+  save(); renderAll();
+}
+
+// ---- Render: Tax panel (shared for luoli/weikou) ----
+function renderTaxPanel(key){
+  const el = document.getElementById('panel-'+key);
+  const c = DATA.companies[key];
+  const t = taxCalc(c);
+  const accent = key;
+
+  const bracketRows = BRACKETS.map(b => `
+    <tr class="${!c.tax.manualBracket && b===t.auto ? 'hit' : ''}">
+      <td>${b.label}</td><td>${(b.rate*100).toFixed(0)}%</td><td>${fmtPlain(b.diff)}</td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+  <div class="hintbox">
+    ${c.name} 綜所稅試算，公式與原 Excel 一致：<br>
+    綜合所得總額 = 扣憑獎勵金 ＋ 營業額 × 推計淨利率<br>
+    綜合所得淨額 = 總額 － 免稅額 － 扣除額（捐贈）－ 特別扣除額<br>
+    應納稅額 = 綜合所得淨額 × 稅率 － 累進差額（取自114年度速算公式）
+  </div>
+
+  <div class="card ${accent}">
+    <h2><span class="accent-dot"></span>綜合所得總額</h2>
+    <div class="row"><span class="lbl">扣憑獎勵金</span><span class="readonly">${fmtPlain(c.rewardBonus)}</span></div>
+    <div class="row"><span class="lbl">推計執行業務所得</span><span class="readonly">${fmtPlain(companyEstimatedProfit(c))}</span></div>
+    <div class="row"><span class="lbl">綜合所得總額</span><span class="readonly">${fmtPlain(t.total)}</span></div>
+  </div>
+
+  <div class="card ${accent}">
+    <h2>免稅額 / 扣除額 / 特別扣除額</h2>
+    <div class="row"><span class="lbl">免稅額人數<span class="note">每人 97,000</span></span>
+      <input type="number" value="${c.tax.exemptionCount}" onchange="DATA.companies['${key}'].tax.exemptionCount=+this.value;save();renderAll();"></div>
+    <div class="row"><span class="lbl">免稅額小計</span><span class="readonly">${fmtPlain(t.exemption)}</span></div>
+    <div class="row"><span class="lbl">扣除額（捐贈收據總額）<span class="note">來自「業績總表」捐贈明細，可在總表分頁調整</span></span>
+      <span class="readonly">${fmtPlain(t.deduction)}</span></div>
+    <div class="row"><span class="lbl">特別扣除額<span class="note">如：6歲以下幼兒學前特別扣除額 150,000／人</span></span>
+      <input type="number" value="${c.tax.specialDeduction}" onchange="DATA.companies['${key}'].tax.specialDeduction=+this.value;save();renderAll();"></div>
+    <div class="row"><span class="lbl" style="font-weight:700;">綜合所得淨額</span><span class="readonly" style="font-size:16px;">${fmtPlain(t.net)}</span></div>
+  </div>
+
+  <div class="card ${accent}">
+    <h2>稅率 / 累進差額</h2>
+    <div class="switch-row">
+      <label>手動指定級距（關閉＝依淨額自動對照下表）</label>
+      <input type="checkbox" ${c.tax.manualBracket?'checked':''} onchange="DATA.companies['${key}'].tax.manualBracket=this.checked;save();renderAll();">
+    </div>
+    ${c.tax.manualBracket ? `
+      <div class="row"><span class="lbl">稅率</span><input type="number" step="0.01" value="${c.tax.manualRate}" onchange="DATA.companies['${key}'].tax.manualRate=+this.value;save();renderAll();"></div>
+      <div class="row"><span class="lbl">累進差額</span><input type="number" value="${c.tax.manualDiff}" onchange="DATA.companies['${key}'].tax.manualDiff=+this.value;save();renderAll();"></div>
+    ` : `
+      <div class="row"><span class="lbl">目前適用稅率</span><span class="readonly">${(t.rate*100).toFixed(0)}%</span></div>
+      <div class="row"><span class="lbl">累進差額</span><span class="readonly">${fmtPlain(t.diff)}</span></div>
+    `}
+    <table class="bracket-table">
+      <tr><th>綜合所得淨額區間</th><th>稅率</th><th>累進差額</th></tr>
+      ${bracketRows}
+    </table>
+  </div>
+
+  <div class="card ${accent}">
+    <h2>扣抵</h2>
+    <div class="row"><span class="lbl">應納稅額（未扣抵前）</span><span class="readonly">${fmtPlain(t.due)}</span></div>
+    <div class="row"><span class="lbl">扣繳稅額</span>
+      <input type="number" value="${c.tax.withheldTax}" onchange="DATA.companies['${key}'].tax.withheldTax=+this.value;save();renderAll();"></div>
+    <div class="row"><span class="lbl">股利或盈餘可抵減稅額</span>
+      <input type="number" value="${c.tax.dividendCredit}" onchange="DATA.companies['${key}'].tax.dividendCredit=+this.value;save();renderAll();"></div>
+  </div>
+
+  <div class="final-box">
+    <div class="lbl">${t.final>=0 ? '預估應納稅額' : '預估退稅金額'}</div>
+    <div class="val">${fmt(Math.abs(t.final))}</div>
+    <div class="sub">綜合所得淨額 ${fmtPlain(t.net)} × ${(t.rate*100).toFixed(0)}% － 累進差額 ${fmtPlain(t.diff)}</div>
+  </div>
+  `;
+}
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+name));
+}
+
+function renderAll(){
+  renderOverview();
+  renderTaxPanel('luoli');
+  renderTaxPanel('weikou');
+}
+
+// ---- Backup ----
+function exportBackup(){
+  const blob = new Blob([JSON.stringify(DATA,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const d = new Date();
+  a.href = url;
+  a.download = `蘿荔薇蔻備份_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function importBackup(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const parsed = JSON.parse(e.target.result);
+      DATA = parsed; save(); renderAll();
+      alert('匯入成功');
+    }catch(err){ alert('檔案格式錯誤'); }
+  };
+  reader.readAsText(file);
+}
+
+// ---- Gate ----
+function tryUnlock(){
+  const v = document.getElementById('gateInput').value;
+  if(v === '0000'){
+    localStorage.setItem('rolmie.weikou.tax.unlocked','1');
+    document.getElementById('gate').style.display='none';
+    document.getElementById('app').style.display='block';
+    load(); renderAll();
+  } else {
+    document.getElementById('gateInput').value='';
+    document.getElementById('gateInput').placeholder='密碼錯誤';
+  }
+}
+document.getElementById('gateInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
+
+if(localStorage.getItem('rolmie.weikou.tax.unlocked')==='1'){
+  document.getElementById('gate').style.display='none';
+  document.getElementById('app').style.display='block';
+  load(); renderAll();
+}
+</script>
+</body>
+</html>
