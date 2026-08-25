@@ -121,6 +121,7 @@
   .minirow .lbl{color:var(--sub);}
   .outstanding{font-size:11.5px; margin-top:6px; padding:6px 8px; border-radius:8px; background:#fbeeee; color:var(--danger);}
   .outstanding.ok{background:#eef7f1; color:var(--good);}
+  .issuable{font-size:11.5px; margin-top:6px; padding:6px 8px; border-radius:8px; background:#eef3fb; color:#2b5c9e;}
 
   details.collapsible{margin-bottom:0;}
   details.collapsible > summary{
@@ -332,6 +333,11 @@ function companyCurrentBalance(c){
   const arr = runningBalances(c);
   return arr.length ? arr[arr.length-1] : (+c.carryInBalance||0);
 }
+// 預估還可開立發票金額＝留底結餘換算成營業稅5%基礎下的開票上限（對應原表「預估可開金額」＝留底÷5%×1.05）
+// 留底結餘越多代表進貨發票還沒被返傭/開立發票用完，還有額度可以開；結餘歸零或負數就代表已經開滿甚至超開
+function estimatedIssuable(bal){
+  return bal > 0 ? bal / 0.05 * 1.05 : 0;
+}
 function companyEstimatedProfit(c){
   return companyRevenue(c) * c.profitRate;
 }
@@ -449,6 +455,7 @@ function companyOverviewCard(key, c, t, isTurn){
         </div>
         <div class="month-revenue-row"><span>本月營業額</span><span>${fmtPlain(rev)}</span></div>
         <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `累積留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
+        ${bal>0 ? `<div class="issuable">預估還可開立發票約 <b>${fmtPlain(estimatedIssuable(bal))}</b>，別開超過這個數字</div>` : ''}
       </div>
     </details>`;
   });
@@ -464,7 +471,7 @@ function companyOverviewCard(key, c, t, isTurn){
 
   return `
   <div class="card ${accent}">
-    <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}<span class="balance-badge"><span class="bl">留底結餘</span>${fmtPlain(companyCurrentBalance(c))}</span></h2>
+    <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}<span class="balance-badge"><span class="bl">留底結餘</span>${fmtPlain(companyCurrentBalance(c))}</span><span class="balance-badge"><span class="bl">還可開約</span>${fmtPlain(estimatedIssuable(companyCurrentBalance(c)))}</span></h2>
     <div class="summary-grid">
       <div class="stat"><div class="lbl">目前總計營業額</div><div class="val">${fmtPlain(companyRevenue(c))}</div></div>
       <div class="stat"><div class="lbl">推計執行業務所得（×${(c.profitRate*100).toFixed(0)}%）</div><div class="val small">${fmtPlain(companyEstimatedProfit(c))}</div></div>
