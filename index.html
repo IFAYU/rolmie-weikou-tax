@@ -338,22 +338,30 @@ function monthRevenue(mo){
 function monthPurchaseTotal(mo){
   return sumArr(mo.purchases);
 }
-// 這個月讓留底結餘變動多少＝進貨發票−（返傭+開立發票）＋會計師算出來的「多的可扣抵」補差額
-function monthDelta(mo){
-  return monthPurchaseTotal(mo) - monthRevenue(mo) + (+mo.extra||0);
+// 進貨發票/營業額都是含稅金額，差額裡真正影響留底(留抵稅額)的只有5%那一份：差額÷1.05×0.05
+function taxEquivalent(dollarGap){
+  return dollarGap / 1.05 * 0.05;
+}
+function monthGap(mo){
+  return monthPurchaseTotal(mo) - monthRevenue(mo);
 }
 // 目前總計營業額＝計稅年度那12個月的明細加總（純由月份資料算出，不是固定數字）
 function companyRevenue(c){
   return c.months.filter(mo=>mo.year===c.taxYear).reduce((a,mo)=>a+monthRevenue(mo),0);
 }
-// 留底結餘採跨月累加（承接 carryInBalance），16個月視窗內每月都有累積後的結餘，
-// 這樣就算年度交界（12月→1月）留底也會自動延續，不用每年手動重填「去年留底金額」
+// 留底結餘＝原表「留底營業稅」，是雙月一期（1-2月、3-4月...）結算的營業稅留抵金額，不是每個月都會變動：
+// 每期＝上一期結餘 ＋ 這兩個月各自差額換算的稅額(÷1.05×0.05) ＋ 這期會計師補的「多的可扣抵」（只記在單月那格）。
+// 回傳跟 c.months 等長的陣列，同一期的兩個月會顯示一樣的期末結餘（跟原表只寫在單月格、隔壁月留白的效果一致）。
 function runningBalances(c){
   let bal = +c.carryInBalance || 0;
-  return c.months.map(mo=>{
-    bal += monthDelta(mo);
-    return bal;
-  });
+  const out = [];
+  for(let i=0; i<c.months.length; i+=2){
+    const moOdd = c.months[i], moEven = c.months[i+1];
+    bal += taxEquivalent(monthGap(moOdd)) + (moEven ? taxEquivalent(monthGap(moEven)) : 0) + (+moOdd.extra||0);
+    out.push(bal);
+    if(moEven) out.push(bal);
+  }
+  return out;
 }
 // 目前留底結餘＝16個月視窗內最新一筆累積結餘（會隨月份填寫變動，不是固定值）
 function companyCurrentBalance(c){
@@ -452,6 +460,8 @@ function renderOverviewContent(key){
       目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
       月份明細顯示計稅年度整年12個月＋隔年1~4月，跨年度時留底結餘會自動接續；
       一旦真實日期超過隔年4月底，去年整年明細會自動併入「留底結餘」後從畫面消失，總額不會漏算，只是不再顯示逐月明細。<br>
+      🧾 留底結餘是<b>雙月一期</b>（1-2月、3-4月...跟營業稅申報週期一樣）結算的：每期把兩個月「進貨發票－(返傭+開立發票)」
+      的差額換算成5%稅額（差額÷1.05×0.05）累加，「多的可扣抵」只需要填在單月（每期第一個月）那格。<br>
       📌 本月（1.2/5.6/9.10月薇蔻，3.4/7.8/11.12月蘿荔）該填進貨發票的是<b>${turnName}</b>，已自動排到最前面。
     </div>
   </details>`;
@@ -497,9 +507,11 @@ function companyOverviewCard(key, c, t, isTurn){
           </table>
         </div>
         <div class="month-revenue-row"><span>本月營業額</span><span>${fmtPlain(rev)}</span></div>
-        <div class="minirow"><span class="lbl">多的可扣抵<span class="note">會計師算出的留底差額，補進去對齊實際數字</span></span>
-          <input type="number" value="${mo.extra||0}" onchange="updateMonthExtra('${key}',${i},this.value)"></div>
-        <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `累積留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
+        ${mo.month % 2 === 1
+          ? `<div class="minirow"><span class="lbl">多的可扣抵<span class="note">營業稅雙月一期（本月＋下個月）合併申報，會計師算出的留底差額補這裡對齊實際數字</span></span>
+          <input type="number" value="${mo.extra||0}" onchange="updateMonthExtra('${key}',${i},this.value)"></div>`
+          : `<div class="mini-note">跟上個月合併為一期申報，留底調整數字填在上個月那格</div>`}
+        <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `本期留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `本期累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
         ${bal>0 ? `<div class="issuable">預估還可開立發票約 <b>${fmtPlain(estimatedIssuable(bal))}</b>，別開超過這個數字</div>` : ''}
         <button class="clearbtn" onclick="clearMonth('${key}',${i})">🗑 清空本月數字</button>
       </div>
@@ -579,11 +591,18 @@ function clearMonth(key, i){
 // 原本視窗內還在新範圍的月份資料原封不動保留，範圍外的月份把差額併入留底結餘再捨棄
 function rebuildWindowForYear(c, newYear){
   const keepMap = {};
+  const foldOut = [];
   c.months.forEach(mo=>{
     const inRange = (mo.year===newYear) || (mo.year===newYear+1 && mo.month<=4);
     if(inRange){ keepMap[mo.year+'-'+mo.month] = mo; }
-    else { c.carryInBalance = (+c.carryInBalance||0) + monthDelta(mo); }
+    else { foldOut.push(mo); }
   });
+  // 捲出去的月份一樣要照「雙月一期」配對換算，不能用單月原始差額直接加總
+  for(let i=0; i<foldOut.length; i+=2){
+    const moOdd = foldOut[i], moEven = foldOut[i+1];
+    c.carryInBalance = (+c.carryInBalance||0)
+      + taxEquivalent(monthGap(moOdd)) + (moEven ? taxEquivalent(monthGap(moEven)) : 0) + (+moOdd.extra||0);
+  }
   const months = [];
   for(let m=1;m<=12;m++) months.push(keepMap[newYear+'-'+m] || emptyMonth(newYear,m));
   for(let m=1;m<=4;m++) months.push(keepMap[(newYear+1)+'-'+m] || emptyMonth(newYear+1,m));
@@ -678,8 +697,12 @@ function renderTaxPanel(key){
     <div class="row"><span class="lbl">免稅額人數<span class="note">每人 97,000</span></span>
       <input type="number" value="${c.tax.exemptionCount}" onchange="DATA.companies['${key}'].tax.exemptionCount=+this.value;save();renderAll();"></div>
     <div class="row"><span class="lbl">免稅額小計</span><span class="readonly">${fmtPlain(t.exemption)}</span></div>
+    <div class="row"><span class="lbl">對機關團體捐贈限額<span class="note">綜合所得總額 × 20%</span></span>
+      <span class="readonly">${fmtPlain(t.total*0.2)}</span></div>
     <div class="row"><span class="lbl">扣除額（捐贈收據總額）<span class="note">來自「業績總表」捐贈明細，可在總表分頁調整</span></span>
       <span class="readonly">${fmtPlain(t.deduction)}</span></div>
+    <div class="row"><span class="lbl">剩餘可捐贈額度<span class="note">捐贈限額 − 已收到的捐贈收據</span></span>
+      <span class="readonly">${fmtPlain(t.total*0.2 - t.deduction)}</span></div>
     <div class="row"><span class="lbl">特別扣除額<span class="note">如：6歲以下幼兒學前特別扣除額 150,000／人</span></span>
       <input type="number" value="${c.tax.specialDeduction}" onchange="DATA.companies['${key}'].tax.specialDeduction=+this.value;save();renderAll();"></div>
     <div class="row"><span class="lbl" style="font-weight:700;">綜合所得淨額</span><span class="readonly" style="font-size:16px;">${fmtPlain(t.net)}</span></div>
