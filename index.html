@@ -721,6 +721,13 @@ function openApp(){
   load(); renderAll();
 }
 
+// 點進任何數字欄位就整格反白選取，直接打字會蓋掉原本的 0，不用自己先刪
+document.addEventListener('focusin', function(ev){
+  if(ev.target && ev.target.tagName === 'INPUT' && ev.target.type === 'number'){
+    ev.target.select();
+  }
+});
+
 document.getElementById('gateForm').addEventListener('submit', function(ev){
   ev.preventDefault();
   const pw = document.getElementById('gatePw');
