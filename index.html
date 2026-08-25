@@ -136,10 +136,12 @@
 <body>
 
 <div id="gate">
-  <div style="font-size:15px;font-weight:700;">蘿荔 × 薇蔻 業績與綜所稅試算</div>
-  <input id="gateInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
-  <button onclick="tryUnlock()">解鎖</button>
-  <div class="hint">忘記密碼請找 IFAYU</div>
+  <form id="gateForm" style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+    <div style="font-size:15px;font-weight:700;">蘿荔 × 薇蔻 業績與綜所稅試算</div>
+    <input id="gatePw" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="current-password">
+    <button type="submit">解鎖</button>
+    <div id="gateErr" class="hint">忘記密碼請找 IFAYU</div>
+  </form>
 </div>
 
 <div id="app">
@@ -491,24 +493,30 @@ function importBackup(evt){
 }
 
 // ---- Gate ----
-function tryUnlock(){
-  const v = document.getElementById('gateInput').value;
-  if(v === '0000'){
-    localStorage.setItem('rolmie.weikou.tax.unlocked','1');
-    document.getElementById('gate').style.display='none';
-    document.getElementById('app').style.display='block';
-    load(); renderAll();
-  } else {
-    document.getElementById('gateInput').value='';
-    document.getElementById('gateInput').placeholder='密碼錯誤';
-  }
-}
-document.getElementById('gateInput').addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
+const GATE_PW = '0000';
+const GATE_KEY = 'rolmie.weikou.tax.unlocked';
 
-if(localStorage.getItem('rolmie.weikou.tax.unlocked')==='1'){
-  document.getElementById('gate').style.display='none';
+function openApp(){
+  const g = document.getElementById('gate');
+  if(g) g.remove();
   document.getElementById('app').style.display='block';
   load(); renderAll();
+}
+
+document.getElementById('gateForm').addEventListener('submit', function(ev){
+  ev.preventDefault();
+  const pw = document.getElementById('gatePw');
+  if(pw.value === GATE_PW){
+    localStorage.setItem(GATE_KEY,'1');
+    openApp();
+  } else {
+    document.getElementById('gateErr').textContent = '密碼不對，再試一次';
+    pw.value = '';
+  }
+});
+
+if(localStorage.getItem(GATE_KEY) === '1'){
+  openApp();
 }
 </script>
 </body>
