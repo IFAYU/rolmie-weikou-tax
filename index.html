@@ -171,8 +171,8 @@
 </div>
 
 <script>
-const STORAGE_KEY = 'rolmie.weikou.tax.v1';
-const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12];
+const STORAGE_KEY = 'rolmie.weikou.tax.v2';
+const RETAIN_MONTHS = 16; // 跨年度留底延續：固定保留最近16個月明細，更早的月份會把差額併入 carryInBalance 再刪除
 const BRACKETS = [
   {min:0,       max:590000,   rate:0.05, diff:0,      label:'0 ~ 590,000'},
   {min:590001,  max:1330000,  rate:0.12, diff:41300,  label:'590,001 ~ 1,330,000'},
@@ -182,30 +182,35 @@ const BRACKETS = [
 ];
 const EXEMPTION_PER_PERSON = 97000;
 
-function emptyMonths(){
-  return MONTHS.map(m => ({ m, purchase:0, rebates:[0,0,0,0,0], issued:0 }));
+function seedMonths(startYear){
+  // 16個月捲動視窗：起始年 1~12月 + 次年 1~4月，讓年度交界時留底可以往下延續
+  const arr = [];
+  for(let m=1; m<=12; m++) arr.push({ year:startYear, month:m, purchase:0, rebates:[0,0,0,0,0], issued:0 });
+  for(let m=1; m<=4; m++) arr.push({ year:startYear+1, month:m, purchase:0, rebates:[0,0,0,0,0], issued:0 });
+  return arr;
 }
 
 function defaultData(){
   return {
-    carryoverLastYear: 119334, // 去年留底金額(共用)
     companies: {
       luoli: {
         name: '蘿荔企業社',
         profitRate: 0.10,
-        priorRevenue: 6161098,   // 匯入前累計營業額(含歷史月份，尚未逐月匯入明細)
+        taxYear: 2025, // 計稅年度（114年度）；目前總計營業額＝該年度12個月明細加總
+        carryInBalance: 119334, // 併入16個月視窗之前的累積留底結餘（相當於原表「去年留底金額」，會隨月份捲動自動累加，不用每年手動重填）
         rewardBonus: 1140000,    // 扣憑獎勵金
         donations: [ {amount:98000, note:'114年捐贈收據'} ],
-        months: emptyMonths(),
+        months: seedMonths(2025),
         tax: { exemptionCount:5, specialDeduction:150000, withheldTax:0, dividendCredit:0, manualBracket:false, manualRate:0.20, manualDiff:147700 }
       },
       weikou: {
         name: '薇蔻企業社',
         profitRate: 0.06,
-        priorRevenue: 6009294,
+        taxYear: 2025,
+        carryInBalance: 0,
         rewardBonus: 0,
         donations: [ {amount:50000, note:'114年捐贈收據'} ],
-        months: emptyMonths(),
+        months: seedMonths(2025),
         tax: { exemptionCount:2, specialDeduction:0, withheldTax:0, dividendCredit:0, manualBracket:false, manualRate:0.05, manualDiff:0 }
       }
     }
@@ -238,12 +243,18 @@ function fmtPlain(n){
 function monthRevenue(mo){
   return (mo.rebates||[0,0,0,0,0]).reduce((a,b)=>a+(+b||0),0) + (+mo.issued||0);
 }
-function monthOutstanding(mo){
-  return (+mo.purchase||0) - monthRevenue(mo);
-}
+// 目前總計營業額＝計稅年度那12個月的明細加總（純由月份資料算出，不是固定數字）
 function companyRevenue(c){
-  const monthsTotal = c.months.reduce((a,mo)=>a+monthRevenue(mo),0);
-  return (+c.priorRevenue||0) + monthsTotal;
+  return c.months.filter(mo=>mo.year===c.taxYear).reduce((a,mo)=>a+monthRevenue(mo),0);
+}
+// 留底結餘採跨月累加（承接 carryInBalance），16個月視窗內每月都有累積後的結餘，
+// 這樣就算年度交界（12月→1月）留底也會自動延續，不用每年手動重填「去年留底金額」
+function runningBalances(c){
+  let bal = +c.carryInBalance || 0;
+  return c.months.map(mo=>{
+    bal += (+mo.purchase||0) - monthRevenue(mo);
+    return bal;
+  });
 }
 function companyEstimatedProfit(c){
   return companyRevenue(c) * c.profitRate;
@@ -283,38 +294,40 @@ function renderOverview(){
 
   let html = `
   <div class="hintbox">
-    💡「匯入前累計營業額」是舊試算表既有的年度累計數字（尚未逐月拆解匯入這裡）；下方每月明細記的是<b>之後</b>新增的進貨發票／返傭／開立發票，兩者加總＝目前總計營業額。捐贈、扣憑獎勵金、留底金額都可以直接改，會即時影響兩家的綜所稅試算。
+    💡 目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
+    月份明細固定保留最近 ${RETAIN_MONTHS} 個月（今年12個月＋明年前4個月），跨年度時留底結餘會自動接續，
+    捲出視窗的舊月份會先把差額併入「留底結餘」再刪除明細，不會漏算。
   </div>`;
 
   html += companyOverviewCard('luoli', L, tL);
   html += companyOverviewCard('weikou', W, tW);
-
-  html += `<div class="card">
-    <h2>🗓️ 去年留底金額（共用）</h2>
-    <div class="row"><span class="lbl">去年留底營業稅金額<span class="note">對應原表 L15</span></span>
-      <input type="number" value="${DATA.carryoverLastYear}" onchange="DATA.carryoverLastYear=+this.value;save();renderAll();"></div>
-  </div>`;
 
   el.innerHTML = html;
 }
 
 function companyOverviewCard(key, c, t){
   const accent = key==='luoli' ? 'luoli' : 'weikou';
+  const balances = runningBalances(c);
   let monthsHtml = '';
+  let lastYear = null;
   c.months.forEach((mo,i)=>{
+    if(mo.year !== lastYear){
+      monthsHtml += `<div style="font-size:12px;color:var(--sub);font-weight:700;margin:10px 0 2px;">${mo.year} 年${mo.year===c.taxYear?'（計稅年度）':''}</div>`;
+      lastYear = mo.year;
+    }
     const rev = monthRevenue(mo);
-    const out = monthOutstanding(mo);
+    const bal = balances[i];
     monthsHtml += `
     <details class="month">
       <summary>
-        <span class="m">${mo.m} 月</span>
+        <span class="m">${mo.month} 月</span>
         <span class="sum">營業額 ${fmtPlain(rev)}</span>
       </summary>
       <div class="body">
         <div class="minirow"><span class="lbl">進貨發票</span><input type="number" value="${mo.purchase}" onchange="updateMonth('${key}',${i},'purchase',this.value)"></div>
         ${mo.rebates.map((r,ri)=>`<div class="minirow"><span class="lbl">返傭${ri+1}</span><input type="number" value="${r}" onchange="updateRebate('${key}',${i},${ri},this.value)"></div>`).join('')}
         <div class="minirow"><span class="lbl">開立發票</span><input type="number" value="${mo.issued}" onchange="updateMonth('${key}',${i},'issued',this.value)"></div>
-        <div class="outstanding ${out<=0?'ok':''}">${out>0 ? `留底未開發票約 ${fmtPlain(out)}` : `已開立齊全（無留底 ${out<0?'，超開 '+fmtPlain(-out):''}）`}</div>
+        <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `累積留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
       </div>
     </details>`;
   });
@@ -339,8 +352,12 @@ function companyOverviewCard(key, c, t){
     </div>
 
     <div class="row" style="margin-top:10px;">
-      <span class="lbl">匯入前累計營業額<span class="note">舊表既有數字，之後靠下方月份累加</span></span>
-      <input type="number" value="${c.priorRevenue}" onchange="DATA.companies['${key}'].priorRevenue=+this.value;save();renderAll();">
+      <span class="lbl">計稅年度<span class="note">目前總計營業額只加總這一年的12個月</span></span>
+      <input type="number" value="${c.taxYear}" onchange="DATA.companies['${key}'].taxYear=+this.value;save();renderAll();">
+    </div>
+    <div class="row">
+      <span class="lbl">留底結餘（視窗起點）<span class="note">併入最舊保留月份之前的累積結餘，相當於原表「去年留底金額」</span></span>
+      <input type="number" value="${c.carryInBalance}" onchange="DATA.companies['${key}'].carryInBalance=+this.value;save();renderAll();">
     </div>
     <div class="row">
       <span class="lbl">扣憑獎勵金</span>
@@ -351,8 +368,9 @@ function companyOverviewCard(key, c, t){
       <input type="number" step="0.01" value="${c.profitRate}" onchange="DATA.companies['${key}'].profitRate=+this.value;save();renderAll();">
     </div>
 
-    <h2 style="margin-top:14px;">🧾 月份明細（點開編輯）</h2>
+    <h2 style="margin-top:14px;">🧾 月份明細（點開編輯，固定捲動保留${RETAIN_MONTHS}個月）</h2>
     ${monthsHtml}
+    <button class="addbtn" onclick="addNextMonth('${key}')">＋ 新增下一個月（自動接續年月，滿${RETAIN_MONTHS}個月會把最舊一筆併入留底結餘）</button>
 
     <h2 style="margin-top:14px;">🎁 捐贈收據</h2>
     ${donHtml}
@@ -366,6 +384,18 @@ function updateMonth(key, i, field, val){
 }
 function updateRebate(key, i, ri, val){
   DATA.companies[key].months[i].rebates[ri] = +val || 0;
+  save(); renderAll();
+}
+function addNextMonth(key){
+  const c = DATA.companies[key];
+  const last = c.months[c.months.length-1];
+  let y = last.year, m = last.month + 1;
+  if(m > 12){ m = 1; y += 1; }
+  c.months.push({ year:y, month:m, purchase:0, rebates:[0,0,0,0,0], issued:0 });
+  while(c.months.length > RETAIN_MONTHS){
+    const oldest = c.months.shift();
+    c.carryInBalance = (+c.carryInBalance||0) + (+oldest.purchase||0) - monthRevenue(oldest);
+  }
   save(); renderAll();
 }
 function addDonation(key){
