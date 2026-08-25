@@ -97,7 +97,7 @@
   .row:last-child{border-bottom:none;}
   .row .lbl{font-size:13.5px; color:#5b5346; flex:1 1 auto; min-width:0;}
   .row input[type=number], .row .readonly{flex-shrink:0;}
-  .row .lbl .note{display:block; font-size:11px; color:var(--sub); font-weight:400;}
+  .lbl .note{display:block; font-size:11px; color:var(--sub); font-weight:400;}
   .row input[type=number]{
     width:130px; text-align:right; font-size:14.5px; padding:7px 9px;
     border:1px solid var(--line); border-radius:8px; background:#fbfaf8;
@@ -116,9 +116,13 @@
   details.month summary .m{font-weight:600; font-size:13.5px;}
   details.month summary .sum{font-size:13px; color:var(--sub);}
   details.month .body{padding:0 2px 12px;}
-  .minirow{display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;}
-  .minirow input{width:110px; text-align:right; padding:5px 7px; border:1px solid var(--line); border-radius:7px; font-size:13px;}
-  .minirow .lbl{color:var(--sub);}
+  .minirow{display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px; gap:8px;}
+  .minirow input{width:110px; min-width:0; flex-shrink:0; text-align:right; padding:5px 7px; border:1px solid var(--line); border-radius:7px; font-size:13px;}
+  .minirow .lbl{color:var(--sub); flex:1 1 auto; min-width:0;}
+  .clearbtn{
+    margin-top:8px; width:100%; border:1px solid var(--line); background:#fbfaf8; color:var(--danger);
+    border-radius:8px; padding:7px 10px; font-size:12px;
+  }
   .outstanding{font-size:11.5px; margin-top:6px; padding:6px 8px; border-radius:8px; background:#fbeeee; color:var(--danger);}
   .outstanding.ok{background:#eef7f1; color:var(--good);}
   .issuable{font-size:11.5px; margin-top:6px; padding:6px 8px; border-radius:8px; background:#eef3fb; color:#2b5c9e;}
@@ -229,7 +233,7 @@ const BRACKETS = [
 const EXEMPTION_PER_PERSON = 97000;
 
 function emptyMonth(year, month){
-  return { year, month, purchases:[0,0,0,0,0], rebates:[0,0,0,0,0], issued:[0,0,0,0,0] };
+  return { year, month, purchases:[0,0,0,0,0], rebates:[0,0,0,0,0], issued:[0,0,0,0,0], extra:0 };
 }
 function seedMonths(startYear){
   // 16個月捲動視窗：起始年 1~12月 + 次年 1~4月，讓年度交界時留底可以往下延續
@@ -278,6 +282,7 @@ function migrateMonth(mo){
     mo.issued = [+mo.issued||0, 0,0,0,0];
   }
   if(!Array.isArray(mo.rebates)) mo.rebates = [0,0,0,0,0];
+  if(typeof mo.extra !== 'number') mo.extra = 0;
   return mo;
 }
 function load(){
@@ -333,6 +338,10 @@ function monthRevenue(mo){
 function monthPurchaseTotal(mo){
   return sumArr(mo.purchases);
 }
+// 這個月讓留底結餘變動多少＝進貨發票−（返傭+開立發票）＋會計師算出來的「多的可扣抵」補差額
+function monthDelta(mo){
+  return monthPurchaseTotal(mo) - monthRevenue(mo) + (+mo.extra||0);
+}
 // 目前總計營業額＝計稅年度那12個月的明細加總（純由月份資料算出，不是固定數字）
 function companyRevenue(c){
   return c.months.filter(mo=>mo.year===c.taxYear).reduce((a,mo)=>a+monthRevenue(mo),0);
@@ -342,7 +351,7 @@ function companyRevenue(c){
 function runningBalances(c){
   let bal = +c.carryInBalance || 0;
   return c.months.map(mo=>{
-    bal += monthPurchaseTotal(mo) - monthRevenue(mo);
+    bal += monthDelta(mo);
     return bal;
   });
 }
@@ -476,8 +485,11 @@ function companyOverviewCard(key, c, t, isTurn){
           </table>
         </div>
         <div class="month-revenue-row"><span>本月營業額</span><span>${fmtPlain(rev)}</span></div>
+        <div class="minirow"><span class="lbl">多的可扣抵<span class="note">會計師算出的留底差額，補進去對齊實際數字</span></span>
+          <input type="number" value="${mo.extra||0}" onchange="updateMonthExtra('${key}',${i},this.value)"></div>
         <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `累積留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
         ${bal>0 ? `<div class="issuable">預估還可開立發票約 <b>${fmtPlain(estimatedIssuable(bal))}</b>，別開超過這個數字</div>` : ''}
+        <button class="clearbtn" onclick="clearMonth('${key}',${i})">🗑 清空本月數字</button>
       </div>
     </details>`;
   });
@@ -538,6 +550,19 @@ function updateMonthField(key, i, field, idx, val){
   DATA.companies[key].months[i][field][idx] = +val || 0;
   save(); renderAll();
 }
+function updateMonthExtra(key, i, val){
+  DATA.companies[key].months[i].extra = +val || 0;
+  save(); renderAll();
+}
+function clearMonth(key, i){
+  if(!confirm('確定要清空這個月的所有數字嗎？（進貨發票／返傭／開立發票／多的可扣抵全部歸零，動作無法復原）')) return;
+  const mo = DATA.companies[key].months[i];
+  mo.purchases = [0,0,0,0,0];
+  mo.rebates = [0,0,0,0,0];
+  mo.issued = [0,0,0,0,0];
+  mo.extra = 0;
+  save(); renderAll();
+}
 // 把月份明細重建成「newYear全年12個月 + newYear+1的1~4月」共16個月的視窗，
 // 原本視窗內還在新範圍的月份資料原封不動保留，範圍外的月份把差額併入留底結餘再捨棄
 function rebuildWindowForYear(c, newYear){
@@ -545,7 +570,7 @@ function rebuildWindowForYear(c, newYear){
   c.months.forEach(mo=>{
     const inRange = (mo.year===newYear) || (mo.year===newYear+1 && mo.month<=4);
     if(inRange){ keepMap[mo.year+'-'+mo.month] = mo; }
-    else { c.carryInBalance = (+c.carryInBalance||0) + monthPurchaseTotal(mo) - monthRevenue(mo); }
+    else { c.carryInBalance = (+c.carryInBalance||0) + monthDelta(mo); }
   });
   const months = [];
   for(let m=1;m<=12;m++) months.push(keepMap[newYear+'-'+m] || emptyMonth(newYear,m));
