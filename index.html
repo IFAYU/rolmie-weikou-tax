@@ -55,10 +55,20 @@
     border:1px solid transparent; border-bottom:none;
   }
   .tab.active{background:var(--card); color:var(--ink); border-color:var(--line);}
-  .tab[data-tab="luoli"].active{box-shadow:inset 0 3px 0 var(--luoli);}
-  .tab[data-tab="weikou"].active{box-shadow:inset 0 3px 0 var(--weikou);}
   section.panel{display:none; padding:16px;}
   section.panel.active{display:block;}
+
+  .subtabs{display:flex; gap:8px; margin-bottom:14px;}
+  .subtab{
+    flex:1; text-align:center; padding:10px 8px; border-radius:12px; cursor:pointer;
+    font-size:13.5px; font-weight:700; border:1px solid var(--line); background:var(--card); color:var(--sub);
+  }
+  .subtab.active.luoli{border-color:var(--luoli); color:var(--luoli); background:#faf3ea;}
+  .subtab.active.weikou{border-color:var(--weikou); color:var(--weikou); background:#eaf3f5;}
+  .turn-badge{
+    display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px;
+    background:var(--warn-bg); color:#8a6a2f; margin-left:6px; vertical-align:middle;
+  }
 
   .card{
     background:var(--card); border:1px solid var(--line); border-radius:16px;
@@ -150,19 +160,18 @@
     <h1>蘿荔 × 薇蔻｜業績與綜所稅試算</h1>
     <div class="tabs">
       <div class="tab active" data-tab="overview" onclick="switchTab('overview')">📒 業績總表</div>
-      <div class="tab" data-tab="luoli" onclick="switchTab('luoli')">🟤 蘿荔綜所稅</div>
-      <div class="tab" data-tab="weikou" onclick="switchTab('weikou')">🔵 薇蔻綜所稅</div>
+      <div class="tab" data-tab="tax" onclick="switchTab('tax')">🧮 綜所稅試算</div>
     </div>
   </header>
 
   <!-- ================= OVERVIEW ================= -->
   <section class="panel active" id="panel-overview"></section>
 
-  <!-- ================= LUOLI TAX ================= -->
-  <section class="panel" id="panel-luoli"></section>
-
-  <!-- ================= WEIKOU TAX ================= -->
-  <section class="panel" id="panel-weikou"></section>
+  <!-- ================= TAX (蘿荔/薇蔻 子選單) ================= -->
+  <section class="panel" id="panel-tax">
+    <div class="subtabs" id="tax-subtabs"></div>
+    <div id="tax-content"></div>
+  </section>
 
   <div class="footerbar">
     <button onclick="exportBackup()">⬇️ 匯出備份</button>
@@ -287,26 +296,40 @@ function taxCalc(c){
   return {total, exemption, deduction, special, net, auto, rate, diff, due, withheld, credit, final};
 }
 
+// ---- 本月輪到誰填進貨發票：1.2/5.6/9.10月→薇蔻，3.4/7.8/11.12月→蘿荔 ----
+function currentTurnCompany(){
+  const m = new Date().getMonth() + 1;
+  return ((m - 1) % 4) < 2 ? 'weikou' : 'luoli';
+}
+function companyOrder(){
+  const turn = currentTurnCompany();
+  return turn === 'luoli' ? ['luoli','weikou'] : ['weikou','luoli'];
+}
+
 // ---- Render: Overview ----
 function renderOverview(){
   const el = document.getElementById('panel-overview');
-  const L = DATA.companies.luoli, W = DATA.companies.weikou;
-  const tL = taxCalc(L), tW = taxCalc(W);
+  const order = companyOrder();
+  const turn = order[0];
+  const turnName = DATA.companies[turn].name;
 
   let html = `
   <div class="hintbox">
     💡 目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
     月份明細固定保留最近 ${RETAIN_MONTHS} 個月（今年12個月＋明年前4個月），跨年度時留底結餘會自動接續，
-    捲出視窗的舊月份會先把差額併入「留底結餘」再刪除明細，不會漏算。
+    捲出視窗的舊月份會先把差額併入「留底結餘」再刪除明細，不會漏算。<br>
+    📌 本月（1.2/5.6/9.10月薇蔻，3.4/7.8/11.12月蘿荔）該填進貨發票的是<b>${turnName}</b>，已自動排到最上面。
   </div>`;
 
-  html += companyOverviewCard('luoli', L, tL);
-  html += companyOverviewCard('weikou', W, tW);
+  order.forEach(key=>{
+    const c = DATA.companies[key];
+    html += companyOverviewCard(key, c, taxCalc(c), key===turn);
+  });
 
   el.innerHTML = html;
 }
 
-function companyOverviewCard(key, c, t){
+function companyOverviewCard(key, c, t, isTurn){
   const accent = key==='luoli' ? 'luoli' : 'weikou';
   const balances = runningBalances(c);
   let monthsHtml = '';
@@ -344,7 +367,7 @@ function companyOverviewCard(key, c, t){
 
   return `
   <div class="card ${accent}">
-    <h2><span class="accent-dot"></span>${c.name}</h2>
+    <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}</h2>
     <div class="summary-grid">
       <div class="stat"><div class="lbl">目前總計營業額</div><div class="val">${fmtPlain(companyRevenue(c))}</div></div>
       <div class="stat"><div class="lbl">推計執行業務所得（×${(c.profitRate*100).toFixed(0)}%）</div><div class="val small">${fmtPlain(companyEstimatedProfit(c))}</div></div>
@@ -412,9 +435,26 @@ function updateDonation(key, i, field, val){
   save(); renderAll();
 }
 
-// ---- Render: Tax panel (shared for luoli/weikou) ----
+// ---- Render: Tax sub-tabs + panel (shared for luoli/weikou) ----
+let currentTaxCompany = null;
+
+function renderTaxSubtabs(){
+  const el = document.getElementById('tax-subtabs');
+  const order = companyOrder();
+  el.innerHTML = order.map(key=>{
+    const c = DATA.companies[key];
+    const active = key===currentTaxCompany;
+    return `<div class="subtab ${active?'active '+key:''}" onclick="selectTaxCompany('${key}')">${c.name}</div>`;
+  }).join('');
+}
+function selectTaxCompany(key){
+  currentTaxCompany = key;
+  renderTaxSubtabs();
+  renderTaxPanel(key);
+}
+
 function renderTaxPanel(key){
-  const el = document.getElementById('panel-'+key);
+  const el = document.getElementById('tax-content');
   const c = DATA.companies[key];
   const t = taxCalc(c);
   const accent = key;
@@ -493,9 +533,10 @@ function switchTab(name){
 }
 
 function renderAll(){
+  if(!currentTaxCompany) currentTaxCompany = companyOrder()[0];
   renderOverview();
-  renderTaxPanel('luoli');
-  renderTaxPanel('weikou');
+  renderTaxSubtabs();
+  renderTaxPanel(currentTaxCompany);
 }
 
 // ---- Backup ----
