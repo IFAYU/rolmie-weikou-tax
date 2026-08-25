@@ -80,10 +80,13 @@
   .weikou .accent-dot, .accent-weikou{background:var(--weikou);}
 
   .summary-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
-  .stat{background:var(--warn-bg); border-radius:12px; padding:10px 12px;}
+  .stat{background:var(--warn-bg); border-radius:12px; padding:10px 12px; min-width:0;}
   .stat .lbl{font-size:11px; color:var(--sub); margin-bottom:4px;}
   .stat .val{font-size:17px; font-weight:700;}
   .stat .val.small{font-size:14px;}
+  .stat.wide{grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between;}
+  .stat.wide .lbl{font-size:11.5px; margin-bottom:0;}
+  .stat.wide .val{font-size:19px;}
 
   .row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid var(--line);}
   .row:last-child{border-bottom:none;}
@@ -113,6 +116,30 @@
   .minirow .lbl{color:var(--sub);}
   .outstanding{font-size:11.5px; margin-top:6px; padding:6px 8px; border-radius:8px; background:#fbeeee; color:var(--danger);}
   .outstanding.ok{background:#eef7f1; color:var(--good);}
+
+  details.collapsible{margin-bottom:0;}
+  details.collapsible > summary{
+    list-style:none; cursor:pointer; display:flex; align-items:center; gap:6px;
+    font-size:12.5px; color:var(--sub); font-weight:600; padding:2px 0;
+  }
+  details.collapsible > summary::-webkit-details-marker{display:none;}
+  details.collapsible > summary::before{content:'▸'; font-size:11px;}
+  details.collapsible[open] > summary::before{content:'▾'; font-size:11px;}
+  details.hint-collapsible{background:var(--warn-bg); border-radius:14px; padding:12px 14px; margin-bottom:14px;}
+  details.hint-collapsible > summary{color:#8a6a2f;}
+  details.hint-collapsible .hint-body{font-size:12.5px; line-height:1.6; color:#6b5a3a; margin-top:8px;}
+  details.settings-collapsible > summary{padding:4px 2px;}
+
+  .mgrid-wrap{overflow-x:auto; margin-top:6px;}
+  table.mgrid{width:100%; border-collapse:collapse; min-width:280px;}
+  table.mgrid th{font-size:11px; color:var(--sub); font-weight:700; padding:4px 3px; text-align:center;}
+  table.mgrid td{padding:3px; text-align:center;}
+  table.mgrid td.rn{font-size:11px; color:var(--sub); width:14px;}
+  table.mgrid input[type=number]{
+    width:100%; min-width:0; box-sizing:border-box; text-align:right; font-size:12px;
+    padding:6px 4px; border:1px solid var(--line); border-radius:6px; background:#fbfaf8;
+  }
+  .month-revenue-row{display:flex; justify-content:space-between; align-items:center; padding:8px 2px 2px; font-size:13px; font-weight:700;}
 
   .donation-item{display:flex; gap:8px; align-items:center; padding:6px 0;}
   .donation-item input[type=number]{flex:1; text-align:right; padding:6px 8px; border:1px solid var(--line); border-radius:7px;}
@@ -192,11 +219,14 @@ const BRACKETS = [
 ];
 const EXEMPTION_PER_PERSON = 97000;
 
+function emptyMonth(year, month){
+  return { year, month, purchases:[0,0,0,0,0], rebates:[0,0,0,0,0], issued:[0,0,0,0,0] };
+}
 function seedMonths(startYear){
   // 16個月捲動視窗：起始年 1~12月 + 次年 1~4月，讓年度交界時留底可以往下延續
   const arr = [];
-  for(let m=1; m<=12; m++) arr.push({ year:startYear, month:m, purchase:0, rebates:[0,0,0,0,0], issued:0 });
-  for(let m=1; m<=4; m++) arr.push({ year:startYear+1, month:m, purchase:0, rebates:[0,0,0,0,0], issued:0 });
+  for(let m=1; m<=12; m++) arr.push(emptyMonth(startYear, m));
+  for(let m=1; m<=4; m++) arr.push(emptyMonth(startYear+1, m));
   return arr;
 }
 
@@ -229,10 +259,25 @@ function defaultData(){
 
 let DATA = null;
 
+function migrateMonth(mo){
+  // 舊格式 purchase/issued 是單一數字，新格式改成各5格陣列（可記多張發票）
+  if(!Array.isArray(mo.purchases)){
+    mo.purchases = [+mo.purchase||0, 0,0,0,0];
+    delete mo.purchase;
+  }
+  if(!Array.isArray(mo.issued)){
+    mo.issued = [+mo.issued||0, 0,0,0,0];
+  }
+  if(!Array.isArray(mo.rebates)) mo.rebates = [0,0,0,0,0];
+  return mo;
+}
 function load(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){ DATA = JSON.parse(raw); }
+    if(raw){
+      DATA = JSON.parse(raw);
+      Object.values(DATA.companies).forEach(c => c.months.forEach(migrateMonth));
+    }
     else { DATA = defaultData(); save(); }
   }catch(e){ DATA = defaultData(); }
 }
@@ -250,8 +295,12 @@ function fmtPlain(n){
 }
 
 // ---- 計算核心 ----
+function sumArr(arr){ return (arr||[]).reduce((a,b)=>a+(+b||0),0); }
 function monthRevenue(mo){
-  return (mo.rebates||[0,0,0,0,0]).reduce((a,b)=>a+(+b||0),0) + (+mo.issued||0);
+  return sumArr(mo.rebates) + sumArr(mo.issued);
+}
+function monthPurchaseTotal(mo){
+  return sumArr(mo.purchases);
 }
 // 目前總計營業額＝計稅年度那12個月的明細加總（純由月份資料算出，不是固定數字）
 function companyRevenue(c){
@@ -262,9 +311,14 @@ function companyRevenue(c){
 function runningBalances(c){
   let bal = +c.carryInBalance || 0;
   return c.months.map(mo=>{
-    bal += (+mo.purchase||0) - monthRevenue(mo);
+    bal += monthPurchaseTotal(mo) - monthRevenue(mo);
     return bal;
   });
+}
+// 目前留底結餘＝16個月視窗內最新一筆累積結餘（會隨月份填寫變動，不是固定值）
+function companyCurrentBalance(c){
+  const arr = runningBalances(c);
+  return arr.length ? arr[arr.length-1] : (+c.carryInBalance||0);
 }
 function companyEstimatedProfit(c){
   return companyRevenue(c) * c.profitRate;
@@ -314,12 +368,15 @@ function renderOverview(){
   const turnName = DATA.companies[turn].name;
 
   let html = `
-  <div class="hintbox">
-    💡 目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
-    月份明細固定保留最近 ${RETAIN_MONTHS} 個月（今年12個月＋明年前4個月），跨年度時留底結餘會自動接續，
-    捲出視窗的舊月份會先把差額併入「留底結餘」再刪除明細，不會漏算。<br>
-    📌 本月（1.2/5.6/9.10月薇蔻，3.4/7.8/11.12月蘿荔）該填進貨發票的是<b>${turnName}</b>，已自動排到最上面。
-  </div>`;
+  <details class="collapsible hint-collapsible">
+    <summary>💡 說明 · 本月該填 <b>${turnName}</b>（點擊展開）</summary>
+    <div class="hint-body">
+      目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
+      月份明細固定保留最近 ${RETAIN_MONTHS} 個月（今年12個月＋明年前4個月），跨年度時留底結餘會自動接續，
+      捲出視窗的舊月份會先把差額併入「留底結餘」再刪除明細，不會漏算。<br>
+      📌 本月（1.2/5.6/9.10月薇蔻，3.4/7.8/11.12月蘿荔）該填進貨發票的是<b>${turnName}</b>，已自動排到最上面。
+    </div>
+  </details>`;
 
   order.forEach(key=>{
     const c = DATA.companies[key];
@@ -341,16 +398,29 @@ function companyOverviewCard(key, c, t, isTurn){
     }
     const rev = monthRevenue(mo);
     const bal = balances[i];
+    let gridRows = '';
+    for(let ri=0; ri<5; ri++){
+      gridRows += `
+        <tr>
+          <td class="rn">${ri+1}</td>
+          <td><input type="number" value="${mo.purchases[ri]}" onchange="updateMonthField('${key}',${i},'purchases',${ri},this.value)"></td>
+          <td><input type="number" value="${mo.rebates[ri]}" onchange="updateMonthField('${key}',${i},'rebates',${ri},this.value)"></td>
+          <td><input type="number" value="${mo.issued[ri]}" onchange="updateMonthField('${key}',${i},'issued',${ri},this.value)"></td>
+        </tr>`;
+    }
     monthsHtml += `
     <details class="month">
       <summary>
         <span class="m">${mo.month} 月</span>
-        <span class="sum">營業額 ${fmtPlain(rev)}</span>
       </summary>
       <div class="body">
-        <div class="minirow"><span class="lbl">進貨發票</span><input type="number" value="${mo.purchase}" onchange="updateMonth('${key}',${i},'purchase',this.value)"></div>
-        ${mo.rebates.map((r,ri)=>`<div class="minirow"><span class="lbl">返傭${ri+1}</span><input type="number" value="${r}" onchange="updateRebate('${key}',${i},${ri},this.value)"></div>`).join('')}
-        <div class="minirow"><span class="lbl">開立發票</span><input type="number" value="${mo.issued}" onchange="updateMonth('${key}',${i},'issued',this.value)"></div>
+        <div class="mgrid-wrap">
+          <table class="mgrid">
+            <tr><th></th><th>進貨發票</th><th>返傭</th><th>開立發票</th></tr>
+            ${gridRows}
+          </table>
+        </div>
+        <div class="month-revenue-row"><span>本月營業額</span><span>${fmtPlain(rev)}</span></div>
         <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `累積留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
       </div>
     </details>`;
@@ -373,24 +443,28 @@ function companyOverviewCard(key, c, t, isTurn){
       <div class="stat"><div class="lbl">推計執行業務所得（×${(c.profitRate*100).toFixed(0)}%）</div><div class="val small">${fmtPlain(companyEstimatedProfit(c))}</div></div>
       <div class="stat"><div class="lbl">預計個人所得總額</div><div class="val">${fmtPlain(t.total)}</div></div>
       <div class="stat"><div class="lbl">預計應納稅額</div><div class="val small" style="color:var(--danger)">${fmtPlain(t.final)}</div></div>
+      <div class="stat wide"><div class="lbl">目前留底結餘</div><div class="val">${fmtPlain(companyCurrentBalance(c))}</div></div>
     </div>
 
-    <div class="row" style="margin-top:10px;">
-      <span class="lbl">計稅年度<span class="note">目前總計營業額只加總這一年的12個月</span></span>
-      <input type="number" value="${c.taxYear}" onchange="DATA.companies['${key}'].taxYear=+this.value;save();renderAll();">
-    </div>
-    <div class="row">
-      <span class="lbl">留底結餘（視窗起點）<span class="note">併入最舊保留月份之前的累積結餘，相當於原表「去年留底金額」</span></span>
-      <input type="number" value="${c.carryInBalance}" onchange="DATA.companies['${key}'].carryInBalance=+this.value;save();renderAll();">
-    </div>
-    <div class="row">
-      <span class="lbl">扣憑獎勵金</span>
-      <input type="number" value="${c.rewardBonus}" onchange="DATA.companies['${key}'].rewardBonus=+this.value;save();renderAll();">
-    </div>
-    <div class="row">
-      <span class="lbl">推計淨利率</span>
-      <input type="number" step="0.01" value="${c.profitRate}" onchange="DATA.companies['${key}'].profitRate=+this.value;save();renderAll();">
-    </div>
+    <details class="collapsible settings-collapsible" style="margin-top:10px;">
+      <summary>⚙️ 設定（計稅年度／留底起點／扣憑獎勵金／淨利率，點擊展開編輯）</summary>
+      <div class="row" style="margin-top:8px;">
+        <span class="lbl">計稅年度<span class="note">目前總計營業額只加總這一年的12個月</span></span>
+        <input type="number" value="${c.taxYear}" onchange="DATA.companies['${key}'].taxYear=+this.value;save();renderAll();">
+      </div>
+      <div class="row">
+        <span class="lbl">留底結餘（視窗起點）<span class="note">併入最舊保留月份之前的累積結餘，相當於原表「去年留底金額」</span></span>
+        <input type="number" value="${c.carryInBalance}" onchange="DATA.companies['${key}'].carryInBalance=+this.value;save();renderAll();">
+      </div>
+      <div class="row">
+        <span class="lbl">扣憑獎勵金</span>
+        <input type="number" value="${c.rewardBonus}" onchange="DATA.companies['${key}'].rewardBonus=+this.value;save();renderAll();">
+      </div>
+      <div class="row">
+        <span class="lbl">推計淨利率</span>
+        <input type="number" step="0.01" value="${c.profitRate}" onchange="DATA.companies['${key}'].profitRate=+this.value;save();renderAll();">
+      </div>
+    </details>
 
     <h2 style="margin-top:14px;">🧾 月份明細（點開編輯，固定捲動保留${RETAIN_MONTHS}個月）</h2>
     ${monthsHtml}
@@ -402,12 +476,8 @@ function companyOverviewCard(key, c, t, isTurn){
   </div>`;
 }
 
-function updateMonth(key, i, field, val){
-  DATA.companies[key].months[i][field] = +val || 0;
-  save(); renderAll();
-}
-function updateRebate(key, i, ri, val){
-  DATA.companies[key].months[i].rebates[ri] = +val || 0;
+function updateMonthField(key, i, field, idx, val){
+  DATA.companies[key].months[i][field][idx] = +val || 0;
   save(); renderAll();
 }
 function addNextMonth(key){
@@ -415,10 +485,10 @@ function addNextMonth(key){
   const last = c.months[c.months.length-1];
   let y = last.year, m = last.month + 1;
   if(m > 12){ m = 1; y += 1; }
-  c.months.push({ year:y, month:m, purchase:0, rebates:[0,0,0,0,0], issued:0 });
+  c.months.push(emptyMonth(y, m));
   while(c.months.length > RETAIN_MONTHS){
     const oldest = c.months.shift();
-    c.carryInBalance = (+c.carryInBalance||0) + (+oldest.purchase||0) - monthRevenue(oldest);
+    c.carryInBalance = (+c.carryInBalance||0) + monthPurchaseTotal(oldest) - monthRevenue(oldest);
   }
   save(); renderAll();
 }
