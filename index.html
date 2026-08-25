@@ -494,10 +494,14 @@ function companyOverviewCard(key, c, t, isTurn){
           <td><input type="number" value="${mo.issued[ri]}" onchange="updateMonthField('${key}',${i},'issued',${ri},this.value)"></td>
         </tr>`;
     }
+    const isOddMonth = mo.month % 2 === 1;
+    const pairMonth = isOddMonth ? mo.month + 1 : mo.month - 1; // 配對的另一個月（可能跨年，僅用於顯示）
+    const periodLabel = isOddMonth ? `第${(mo.month+1)/2}期：${mo.month}-${pairMonth}月` : `併入第${mo.month/2}期（${pairMonth}-${mo.month}月）`;
     monthsHtml += `
     <details class="month" data-key="m-${mo.year}-${mo.month}">
       <summary>
         <span class="m">${mo.month} 月</span>
+        <span class="sum">${periodLabel}</span>
       </summary>
       <div class="body">
         <div class="mgrid-wrap">
@@ -507,11 +511,11 @@ function companyOverviewCard(key, c, t, isTurn){
           </table>
         </div>
         <div class="month-revenue-row"><span>本月營業額</span><span>${fmtPlain(rev)}</span></div>
-        ${mo.month % 2 === 1
-          ? `<div class="minirow"><span class="lbl">多的可扣抵<span class="note">營業稅雙月一期（本月＋下個月）合併申報，會計師算出的留底差額補這裡對齊實際數字</span></span>
+        ${isOddMonth
+          ? `<div class="minirow"><span class="lbl">多的可扣抵<span class="note">${mo.month}-${pairMonth}月合併為第${(mo.month+1)/2}期申報，會計師算出的留底差額補這裡對齊實際數字</span></span>
           <input type="number" value="${mo.extra||0}" onchange="updateMonthExtra('${key}',${i},this.value)"></div>`
-          : `<div class="mini-note">跟上個月合併為一期申報，留底調整數字填在上個月那格</div>`}
-        <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `本期留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `本期累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
+          : `<div class="mini-note">📎 跟 ${pairMonth} 月合併為第${mo.month/2}期申報，留底調整數字要填在 ${pairMonth} 月那格的「多的可扣抵」</div>`}
+        <div class="outstanding ${bal<=0?'ok':''}">${bal>0 ? `本期（第${Math.ceil(mo.month/2)}期）留底結餘約 ${fmtPlain(bal)}` : (bal<0 ? `本期累積超開 ${fmtPlain(-bal)}` : '留底已結清')}</div>
         ${bal>0 ? `<div class="issuable">預估還可開立發票約 <b>${fmtPlain(estimatedIssuable(bal))}</b>，別開超過這個數字</div>` : ''}
         <button class="clearbtn" onclick="clearMonth('${key}',${i})">🗑 清空本月數字</button>
       </div>
@@ -674,6 +678,8 @@ function renderTaxPanel(key){
     <div class="val">${fmt(Math.abs(t.final))}</div>
     <div class="sub">綜合所得淨額 ${fmtPlain(t.net)} × ${(t.rate*100).toFixed(0)}% － 累進差額 ${fmtPlain(t.diff)}</div>
   </div>
+
+  <div class="stat wide" style="margin-top:10px;"><div class="lbl">剩餘可捐贈額度</div><div class="val">${fmtPlain(t.total*0.2 - t.deduction)}</div></div>
 
   <details class="collapsible hint-collapsible" data-key="hint" style="margin-top:12px;">
     <summary>💡 說明（點擊展開）</summary>
