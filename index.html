@@ -447,14 +447,12 @@ function toggleManualBracket(key, checked){
   save(); renderAll();
 }
 
-// ---- 本月輪到誰填進貨發票：1.2/5.6/9.10月→薇蔻，3.4/7.8/11.12月→蘿荔 ----
-function currentTurnCompany(){
-  const m = new Date().getMonth() + 1;
-  return ((m - 1) % 4) < 2 ? 'weikou' : 'luoli';
-}
+// ---- 固定分工：蘿荔開佣金、薇蔻開發票（不再按月輪流） ----
 function companyOrder(){
-  const turn = currentTurnCompany();
-  return turn === 'luoli' ? ['luoli','weikou'] : ['weikou','luoli'];
+  return ['luoli','weikou'];
+}
+function companyInstruction(key){
+  return key === 'luoli' ? '開佣金' : '開發票';
 }
 
 // ---- Render: Overview（跟綜所稅試算一樣用蘿荔/薇蔻子選單，不用兩家都攤開） ----
@@ -466,8 +464,7 @@ function renderOverviewSubtabs(){
   el.innerHTML = order.map(key=>{
     const c = DATA.companies[key];
     const active = key===currentOverviewCompany;
-    const isTurn = key===order[0];
-    return `<div class="subtab ${active?'active '+key:''}" onclick="selectOverviewCompany('${key}')">${c.name}${isTurn?' 📌':''}</div>`;
+    return `<div class="subtab ${active?'active '+key:''}" onclick="selectOverviewCompany('${key}')">${c.name}（${companyInstruction(key)}）</div>`;
   }).join('');
 }
 function selectOverviewCompany(key){
@@ -480,31 +477,28 @@ function renderOverviewContent(key){
   const isFirstView = !autoOpenedMonth.has(key);
   const openKeys = captureOpenState(el, isFirstView ? [currentMonthKey()] : []);
   autoOpenedMonth.add(key);
-  const order = companyOrder();
-  const turn = order[0];
-  const turnName = DATA.companies[turn].name;
   const c = DATA.companies[key];
 
   let html = `
   <details class="collapsible hint-collapsible" data-key="hint">
-    <summary>💡 說明 · 本月該填 <b>${turnName}</b>（點擊展開）</summary>
+    <summary>💡 說明 · ${c.name}固定${companyInstruction(key)}（點擊展開）</summary>
     <div class="hint-body">
       目前總計營業額是<b>計稅年度那12個月明細加總算出來的</b>，不是固定數字——月份資料改了，營業額、綜所稅會一起變動。
       月份明細顯示計稅年度整年12個月＋隔年1~4月，跨年度時留底結餘會自動接續；
       一旦真實日期超過隔年4月底，去年整年明細會自動併入「留底結餘」後從畫面消失，總額不會漏算，只是不再顯示逐月明細。<br>
       🧾 留底結餘是<b>雙月一期</b>（1-2月、3-4月...跟營業稅申報週期一樣）結算的：每期把兩個月「進貨發票－(返傭+開立發票)」
       的差額換算成5%稅額（差額÷1.05×0.05）累加，「多的可扣抵」只需要填在單月（每期第一個月）那格。<br>
-      📌 本月（1.2/5.6/9.10月薇蔻，3.4/7.8/11.12月蘿荔）該填進貨發票的是<b>${turnName}</b>，已自動排到最前面。
+      📌 分工固定：蘿荔企業社開佣金、薇蔻企業社開發票，不隨月份輪流。
     </div>
   </details>`;
 
-  html += companyOverviewCard(key, c, taxCalc(c), key===turn);
+  html += companyOverviewCard(key, c, taxCalc(c));
 
   el.innerHTML = html;
   restoreOpenState(el, openKeys);
 }
 
-function companyOverviewCard(key, c, t, isTurn){
+function companyOverviewCard(key, c, t){
   const accent = key==='luoli' ? 'luoli' : 'weikou';
   const balances = runningBalances(c);
   let monthsHtml = '';
@@ -564,7 +558,7 @@ function companyOverviewCard(key, c, t, isTurn){
 
   return `
   <div class="card ${accent}">
-    <h2><span class="accent-dot"></span>${c.name}${isTurn ? '<span class="turn-badge">本月填這家</span>' : ''}<span class="balance-badge"><span class="bl">留底結餘</span>${fmtPlain(companyCurrentBalance(c))}</span><span class="balance-badge"><span class="bl">還可開約</span>${fmtPlain(estimatedIssuable(companyCurrentBalance(c)))}</span></h2>
+    <h2><span class="accent-dot"></span>${c.name}<span class="turn-badge">${companyInstruction(key)}</span><span class="balance-badge"><span class="bl">留底結餘</span>${fmtPlain(companyCurrentBalance(c))}</span><span class="balance-badge"><span class="bl">還可開約</span>${fmtPlain(estimatedIssuable(companyCurrentBalance(c)))}</span></h2>
     <div class="summary-grid">
       <div class="stat"><div class="lbl">目前總計營業額</div><div class="val">${fmtPlain(companyRevenue(c))}</div></div>
       <div class="stat"><div class="lbl">扣憑獎勵金</div><div class="val">${fmtPlain(c.rewardBonus)}</div></div>
