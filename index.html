@@ -339,7 +339,7 @@
   .inv-tab:hover{ color:var(--inv-ink); }
   .inv-tab[aria-selected="true"]{ color:var(--accent); border-bottom-color:var(--accent); }
 
-  .inv-scope main{ padding:20px clamp(14px,3vw,32px) 100px; max-width:1400px; margin:0 auto; }
+  .inv-scope main{ padding:20px clamp(14px,3vw,32px) 24px; max-width:1400px; margin:0 auto; }
   .inv-scope [hidden]{ display:none !important; }
 
   /* ---------- workspace grid ---------- */
@@ -495,11 +495,14 @@
   .paper .stamp-box .cap{ font-size:.66rem; color:#6b6f5f; margin-bottom:4px; }
 
   /* footer action bar */
+  /* 2026-09-08：原本是 position:fixed 貼底浮動，但這個網站本身在每一頁最下面都有
+     自己的 .footerbar（雲端重新整理/匯出備份等）也是 fixed bottom:0——兩個貼底的
+     固定列疊在同一塊畫面上，會互相蓋住，手機上使用者反應「下載按鈕不見了」，
+     其實是被 host 自己的 footerbar 蓋住或擠掉了。改成一般文件流裡的區塊，
+     不浮動，就不會再跟 host 的 footerbar 搶位置。 */
   .actionbar{
-    position:fixed; left:0; right:0; bottom:0;
-    padding:12px clamp(14px,3vw,32px) max(12px, env(safe-area-inset-bottom));
-    background:linear-gradient(to top, var(--paper) 60%, transparent);
-    display:flex; justify-content:flex-end; gap:10px; pointer-events:none;
+    padding:16px clamp(14px,3vw,32px); margin-top:8px;
+    display:flex; justify-content:flex-end; gap:10px;
   }
   .actionbar .inner{
     pointer-events:auto; display:flex; gap:10px; background:var(--inv-card); border:1px solid var(--inv-line);
