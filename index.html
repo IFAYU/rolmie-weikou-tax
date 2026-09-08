@@ -496,7 +496,8 @@
 
   /* footer action bar */
   .actionbar{
-    position:fixed; left:0; right:0; bottom:0; padding:12px clamp(14px,3vw,32px);
+    position:fixed; left:0; right:0; bottom:0;
+    padding:12px clamp(14px,3vw,32px) max(12px, env(safe-area-inset-bottom));
     background:linear-gradient(to top, var(--paper) 60%, transparent);
     display:flex; justify-content:flex-end; gap:10px; pointer-events:none;
   }
@@ -520,7 +521,7 @@
   .modal-body iframe{ width:100%; height:70vh; border:none; display:block; }
   .modal-body{ overflow-y:auto; max-height:70vh; padding:16px; }
   .modal-body img.pdf-preview-img{ width:100%; height:auto; display:block; border-radius:8px; box-shadow:var(--shadow); }
-  .modal-foot{ padding:12px 18px; display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--inv-line); }
+  .modal-foot{ padding:12px 18px max(12px, env(safe-area-inset-bottom)); display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--inv-line); flex-wrap:wrap; }
 
   /* toast */
   #toast{
@@ -782,7 +783,7 @@
     name: "ROLIE Co. 蘿荔企業社",
     address: "10F., No. 139, Zhongzheng 4th Rd., Qianjin Dist., Kaohsiung City, Taiwan",
     tel: "+886 910 983 641",
-    contact: "游淑閔"
+    contact: "Yu Shu Min"
   };
 
   // ---------------- state ----------------
@@ -1073,8 +1074,8 @@
   $("#migrateOldFavBtn").addEventListener("click", function(){
     if(!dbReady){ toast("資料庫還沒連上，稍等一下再試"); return; }
     addRecipient({consignee:"XR BB Beauty Wellness", address:"10, jalan ekoflora 5/2, taman ekoflora, 81100 Johor Bahru, Johor", phone:"0189880000", name:"XR BB Beauty Wellness"});
-    addCatalogItem({name:"植萃纖酵素", price:98});
-    addCatalogItem({name:"爆纖錠", price:91});
+    addCatalogItem({name:"Plant-Based Fiber Enzyme", price:98});
+    addCatalogItem({name:"Fiber Boost Tablets", price:91});
     toast("已匯入舊的常用收件人／物品");
     this.style.display = "none";
   });
@@ -1457,11 +1458,21 @@
     // 用 <img src="data:..."> 而不是 <iframe src="blob:...">：Artifact 沙盒會擋掉在
     // iframe 裡載入 blob: URL（畫面只會看到破圖示，不會有任何錯誤訊息），data: 圖片
     // 沒有這個限制，而且 PDF 本來就是這張截圖轉出來的，內容完全一樣，直接秀圖更單純可靠。
+    // 2026-09-08：下載按鈕原本只放在 modal-foot（固定貼底），手機上會被瀏覽器自己的
+    // 底部工具列／手勢列蓋住或擠出畫面，「開了 desktop site」也只是把整頁縮小、按鈕
+    // 變更難點準。改成把下載按鈕搬到 modal-head（畫面最上面，永遠看得到、點得到），
+    // modal-foot 保留給桌面版一起看，手機版才是真正靠得住的入口。
     var root = $("#modalRoot");
     root.innerHTML =
       '<div class="modal-backdrop" id="mbBackdrop">'+
         '<div class="modal">'+
-          '<div class="modal-head"><h3>PDF 預覽</h3><button class="btn ghost sm" id="mbClose">✕ 關閉</button></div>'+
+          '<div class="modal-head">'+
+            '<h3>PDF 預覽</h3>'+
+            '<div style="display:flex;gap:8px;">'+
+              '<button class="btn primary sm" id="mbSaveTop">⬇ 下載</button>'+
+              '<button class="btn ghost sm" id="mbClose">✕</button>'+
+            '</div>'+
+          '</div>'+
           '<div class="modal-body"><img class="pdf-preview-img" src="'+previewImg+'" alt="PDF 預覽"></div>'+
           '<div class="modal-foot">'+
             '<button class="btn ghost" id="mbClose2">關閉</button>'+
@@ -1470,10 +1481,12 @@
         '</div>'+
       '</div>';
     function close(){ root.innerHTML=""; }
+    function doSave(){ saveBlob(blob, filename); }
     $("#mbClose").addEventListener("click", close);
     $("#mbClose2").addEventListener("click", close);
     $("#mbBackdrop").addEventListener("click", function(e){ if(e.target.id==="mbBackdrop") close(); });
-    $("#mbSave").addEventListener("click", function(){ saveBlob(blob, filename); });
+    $("#mbSave").addEventListener("click", doSave);
+    $("#mbSaveTop").addEventListener("click", doSave);
   }
 
   // 一般網站直接用原生下載（<a download> + blob URL），不需要 Artifact 的 downloads
