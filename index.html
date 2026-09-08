@@ -1428,20 +1428,25 @@
   // already-correct on-screen invoice preview (real fonts, real layout) with
   // html2canvas and drop that image into an A4 PDF page — WYSIWYG, no font issues.
   function buildPdfFromPreview(){
-    // 2026-09-08 用戶回報「下載出來不是 A4 格式」：jsPDF 的頁面本來就已經是
-    // format:"a4"，真正的問題是畫面上 .paper 這張「卡片」有圓角+陰影，html2canvas
-    // 是整個 DOM 節點原封不動截圖，圓角卡片的比例（偏窄偏高）塞進 A4 版面時，
-    // 為了不裁切內容會整張等比縮小塞進頁面正中間，兩側留下大片空白，看起來
-    // 完全不像正式文件、比較像「一張截圖貼在紙上」。修法：截圖前先暫時拿掉圓角、
-    // 陰影、外框（讓截圖是純長方形，跟真正印出來的文件一樣），並且改成「寬度
-    // 撐滿版面」而不是「整張等比塞進單頁」——如果內容真的比一頁 A4 還高，就照
-    // 實際高度切成好幾頁，不要為了硬塞進一頁而整體縮小。
+    // 2026-09-08 幾輪回報整理：①下載出來像「截圖貼在紙上」——.paper 卡片本身有
+    // 圓角+陰影，截圖前先暫時拿掉，截完再還原，讓截圖是純長方形。②手機下載變成
+    // 2 頁，同一份資料電腦上卻是 1 頁——html2canvas 是照 #invoicePreview「當下
+    // 實際渲染寬度」截圖的，這個網站是手機優先窄版面，手機上這個節點被擠得很窄、
+    // 內容被迫多換行變得很高，寬:高比例跟桌面版差很多；截圖前先暫時把節點寬度
+    // 強制設成固定值，截完再還原，這樣不管手機還是電腦截出來的圖永遠是同一個
+    // 比例。③用戶明確要求：就是要「整張等比縮小塞進一頁」（舊版行為，字會變小
+    // 但保證一頁），不要「撐滿寬度、太高就分頁」——已改回單頁縮放版本。
     var node = $("#invoicePreview");
+    var PRINT_WIDTH_PX = 720;
     var prevStyle = {
       borderRadius: node.style.borderRadius,
       boxShadow: node.style.boxShadow,
-      border: node.style.border
+      border: node.style.border,
+      width: node.style.width,
+      maxWidth: node.style.maxWidth
     };
+    node.style.width = PRINT_WIDTH_PX + "px";
+    node.style.maxWidth = PRINT_WIDTH_PX + "px";
     node.style.borderRadius = "0";
     node.style.boxShadow = "none";
     node.style.border = "none";
@@ -1453,38 +1458,24 @@
       node.style.borderRadius = prevStyle.borderRadius;
       node.style.boxShadow = prevStyle.boxShadow;
       node.style.border = prevStyle.border;
+      node.style.width = prevStyle.width;
+      node.style.maxWidth = prevStyle.maxWidth;
 
       var jsPDFCtor = window.jspdf.jsPDF;
       var doc = new jsPDFCtor({unit:"pt", format:"a4"});
       var pageW = doc.internal.pageSize.getWidth();
       var pageH = doc.internal.pageSize.getHeight();
       var margin = 28;
-      var contentW = pageW - margin*2;
-      var contentH = pageH - margin*2;
-      // 寬度固定撐滿版面，這樣算出每一頁能放多少「原始 canvas 像素高度」
-      var pxPerPt = canvas.width / contentW;
-      var pageContentPxH = Math.floor(contentH * pxPerPt);
-      var totalPxH = canvas.height;
-      var pageCount = Math.max(1, Math.ceil(totalPxH / pageContentPxH));
-
-      for(var i = 0; i < pageCount; i++){
-        if(i > 0) doc.addPage();
-        var sliceY = i * pageContentPxH;
-        var sliceH = Math.min(pageContentPxH, totalPxH - sliceY);
-        var sliceCanvas = document.createElement("canvas");
-        sliceCanvas.width = canvas.width;
-        sliceCanvas.height = sliceH;
-        var ctx = sliceCanvas.getContext("2d");
-        ctx.fillStyle = "#fffdf8";
-        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-        ctx.drawImage(canvas, 0, sliceY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-        var sliceImgData = sliceCanvas.toDataURL("image/jpeg", 0.95);
-        var sliceHPt = sliceH / pxPerPt;
-        doc.addImage(sliceImgData, "JPEG", margin, margin, contentW, sliceHPt);
-      }
-
-      var previewImg = canvas.toDataURL("image/jpeg", 0.95);
-      return {doc: doc, previewImg: previewImg};
+      var maxW = pageW - margin*2;
+      var maxH = pageH - margin*2;
+      var ratio = canvas.width / canvas.height;
+      var w = maxW, h = w / ratio;
+      if(h > maxH){ h = maxH; w = h * ratio; }
+      var x = (pageW - w) / 2;
+      var y = margin;
+      var imgData = canvas.toDataURL("image/jpeg", 0.95);
+      doc.addImage(imgData, "JPEG", x, y, w, h);
+      return {doc: doc, previewImg: imgData};
     });
   }
 
