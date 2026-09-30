@@ -170,6 +170,8 @@
   /* 修正：手機深色模式下輸入格文字被瀏覽器自動改成白色，疊在固定淺色底上看起來像空白。明確指定文字色。 */
   table.mgrid input[type=number], .row input[type=number], .minirow input, .donation-item input,
   .stat input, .settings-collapsible input{color:var(--ink); -webkit-text-fill-color:var(--ink); caret-color:var(--ink);}
+  /* 沒有自己背景色的輸入格（多的可扣抵、捐贈、設定區），深色模式會被瀏覽器塗成深灰，文字色與背景要成對指定 */
+  .minirow input, .donation-item input, .settings-collapsible input{background:#fbfaf8;}
   .month-revenue-row{display:flex; justify-content:space-between; align-items:center; padding:8px 2px 2px; font-size:13px; font-weight:700;}
 
   .donation-item{display:flex; gap:8px; align-items:center; padding:6px 0;}
