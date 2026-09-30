@@ -172,6 +172,8 @@
   .stat input, .settings-collapsible input{color:var(--ink); -webkit-text-fill-color:var(--ink); caret-color:var(--ink);}
   /* 沒有自己背景色的輸入格（多的可扣抵、捐贈、設定區），深色模式會被瀏覽器塗成深灰，文字色與背景要成對指定 */
   .minirow input, .donation-item input, .settings-collapsible input{background:#fbfaf8;}
+  /* 業績總表／綜所稅兩個分頁的版面是固定淺色，表單控制項（勾選框、輸入格）也固定用淺色渲染；海外出貨單分頁不受影響 */
+  #panel-overview, #panel-tax{color-scheme:light;}
   .month-revenue-row{display:flex; justify-content:space-between; align-items:center; padding:8px 2px 2px; font-size:13px; font-weight:700;}
 
   .donation-item{display:flex; gap:8px; align-items:center; padding:6px 0;}
