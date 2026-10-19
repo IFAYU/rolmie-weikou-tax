@@ -228,6 +228,7 @@
       <div class="tab active" data-tab="overview" onclick="switchTab('overview')">📒 業績總表</div>
       <div class="tab" data-tab="tax" onclick="switchTab('tax')">🧮 綜所稅試算</div>
       <div class="tab" data-tab="shipping" onclick="switchTab('shipping')">🚚 海外出貨單</div>
+      <div class="tab" data-tab="gm" onclick="switchTab('gm')">🧮 好馬吉運費</div>
     </div>
   </header>
 
@@ -241,6 +242,12 @@
   <section class="panel" id="panel-tax">
     <div class="subtabs" id="tax-subtabs"></div>
     <div id="tax-content"></div>
+  </section>
+
+  <!-- ================= 好馬吉運費試算 (蘿荔/薇蔻 子選單) ================= -->
+  <section class="panel" id="panel-gm">
+    <div class="subtabs" id="gm-subtabs"></div>
+    <div id="gm-content"></div>
   </section>
 
   <!-- ================= SHIPPING (蘿荔海外出貨單，port自 Claude Artifact) ================= -->
@@ -2266,6 +2273,155 @@ if(HAS_FB){
   showAuthGate(false);
   openApp();
 }
+</script>
+<script>
+// ── 好馬吉(GoodMaji)一般快遞運費試算：離線費率模型 ─────────────────────────
+// 2026-10-19 用蘿荔企業社帳號在好馬吉後台「帳單試算管理 > 運費試算」實測反推（各國掃 0.5~500kg 對照），
+// 不依賴登入後台（好馬吉對 Playwright 有防機器人限制）。費率改版時要重新實測，見 goodmaji-shipment-filing skill。
+// 規則：總重(實重/材積取大，材積=長×寬×高÷5000，逐件×件數加總) → 四捨五入到 0.1kg → 10kg 以下進位到 0.5kg
+//       (澳門 9kg 以下進位到 1kg)、超過 10kg 進位到 1kg → 查價；MY(EAST) 另加偏遠 80/kg；燃油費=(運費+偏遠)×燃油%。
+const GM = {
+  countries: {
+    MY: { name: '馬來西亞', areas: ['MY(WEST) 西馬', 'MY(EAST) 東馬'], channel: '包稅', first: 210, perHalf: 90,  halfStep: true,  tiers: [165, 160, 155], remotePerKg: [0, 80] },
+    SG: { name: '新加坡',   areas: ['SG'], channel: '一般快遞', first: 215, perHalf: 80,  halfStep: true,  tiers: [170, 155, 150] },
+    HK: { name: '香港',     areas: ['HK'], channel: '包稅快遞', first: 140, perHalf: 50,  halfStep: true,  tiers: [100, 100, 100] },
+    MO: { name: '澳門',     areas: ['MO'], channel: '一般快遞', first: 205, perHalf: 85,  halfStep: false, tiers: [120, 120, 120] },
+    US: { name: '美國',     areas: ['US'], channel: '一般快遞', first: 950, perHalf: 200, halfStep: true,  tiers: [350, 330, 300] },
+    JP: { name: '日本',     areas: ['JP'], channel: '一般快遞', first: 550, perHalf: 100, halfStep: true,  tiers: [200, 180, 160], at95: 2000 },
+  },
+  defaultFuelPct: 42.75,   // 2026年10月份燃油附加費（好馬吉後台公告，每月會變，頁面可自行調整）
+  round1(x) { return Math.round(x * 10) / 10; },
+  // 回傳 { actual, volumetric, rawWeight, billable, base, remote, fuel, subtotal, tax, total, unitNote }
+  calc(code, areaIdx, pkgs, fuelPct, withTax) {
+    const c = this.countries[code];
+    if (!c) return null;
+    let actual = 0, vol = 0, count = 0;
+    for (const p of pkgs) {
+      const n = Math.max(1, parseInt(p.n) || 1);
+      actual += (parseFloat(p.kg) || 0) * n;
+      vol += ((parseFloat(p.l) || 0) * (parseFloat(p.w) || 0) * (parseFloat(p.h) || 0) / 5000) * n;
+      count += n;
+    }
+    const raw = this.round1(Math.max(actual, vol));
+    if (raw <= 0) return null;
+    let billable, base;
+    if (raw <= 9.5) {
+      const step = c.halfStep ? 0.5 : 1;               // 澳門 10kg 以下以 1kg 為單位
+      billable = Math.max(1, Math.ceil(raw / step - 1e-9) * step);
+    } else {
+      billable = Math.ceil(raw - 1e-9);
+    }
+    if (billable >= 10) {
+      const rate = billable >= 100 ? c.tiers[2] : billable >= 45 ? c.tiers[1] : c.tiers[0];
+      base = billable * rate;
+    } else if (billable === 9.5 && c.at95) {
+      base = c.at95;                                    // 日本 9.5kg 實測直接等於 10kg 價
+    } else {
+      base = c.first + (billable - 1) * (c.halfStep ? c.perHalf * 2 : c.perHalf);
+    }
+    const remote = c.remotePerKg ? c.remotePerKg[areaIdx] * Math.ceil(billable) : 0;
+    const subtotal = base + remote;
+    const fuel = Math.round(subtotal * (fuelPct / 100));
+    const preTax = subtotal + fuel;
+    const tax = withTax ? Math.round(preTax * 0.05) : 0;
+    return { actual: this.round1(actual), volumetric: this.round1(vol), raw, billable, base, remote, fuel, preTax, tax, total: preTax + tax, count };
+  },
+};
+window.GM = GM;
+
+// ================= 好馬吉運費試算（蘿荔/薇蔻子選單）=================
+const GM_STATE = {
+  company: 'luoli',
+  fuelPct: (function(){ try{ const v=parseFloat(localStorage.getItem('gm_fuel_pct')); return v>0?v:GM.defaultFuelPct; }catch(e){ return GM.defaultFuelPct; } })(),
+  withTax: false,
+  perCo: {
+    luoli:  { country:'MY', area:0, pkgs:[{l:'',w:'',h:'',kg:'',n:1}] },
+    weikou: { country:'MY', area:0, pkgs:[{l:'',w:'',h:'',kg:'',n:1}] },
+  },
+};
+const GM_CO_NAME = { luoli:'蘿荔企業社', weikou:'薇蔻企業社' };
+
+function gmSelectCompany(key){ GM_STATE.company = key; renderGm(); }
+function gmCur(){ return GM_STATE.perCo[GM_STATE.company]; }
+
+function renderGm(){
+  const sub = document.getElementById('gm-subtabs');
+  sub.innerHTML = ['luoli','weikou'].map(k=>
+    `<div class="subtab ${k===GM_STATE.company?'active '+k:''}" onclick="gmSelectCompany('${k}')">${GM_CO_NAME[k]}</div>`).join('');
+  const s = gmCur(), c = GM.countries[s.country];
+  const countryOpts = Object.keys(GM.countries).map(k=>`<option value="${k}" ${k===s.country?'selected':''}>${GM.countries[k].name}</option>`).join('');
+  const areaOpts = c.areas.map((a,i)=>`<option value="${i}" ${i===s.area?'selected':''}>${a}</option>`).join('');
+  const rows = s.pkgs.map((p,i)=>`
+    <div style="display:grid;grid-template-columns:repeat(5,1fr) 32px;gap:6px;margin-bottom:6px;align-items:end;">
+      ${[['l','長(cm)'],['w','寬(cm)'],['h','高(cm)'],['kg','重(kg)'],['n','件數']].map(([f,lbl])=>
+        `<div>${i===0?`<div style="font-size:11px;color:var(--sub);margin-bottom:3px;">${lbl}</div>`:''}<input type="number" min="0" step="any" inputmode="decimal" value="${p[f]}" oninput="gmSet(${i},'${f}',this.value)" style="width:100%;box-sizing:border-box;padding:8px 6px;border:1px solid var(--line);border-radius:8px;font-size:14px;"></div>`).join('')}
+      <button class="btn sm" onclick="gmDel(${i})" ${s.pkgs.length>1?'':'disabled'} style="padding:8px 0;">✕</button>
+    </div>`).join('');
+  document.getElementById('gm-content').innerHTML = `
+  <div class="card ${GM_STATE.company}">
+    <h2><span class="accent-dot"></span>${GM_CO_NAME[GM_STATE.company]}｜好馬吉運費試算（一般快遞）</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div><div style="font-size:11px;color:var(--sub);margin-bottom:3px;">派送國家</div>
+        <select onchange="gmCountry(this.value)" style="width:100%;padding:9px 6px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${countryOpts}</select></div>
+      <div style="${c.areas.length>1?'':'display:none'}"><div style="font-size:11px;color:var(--sub);margin-bottom:3px;">派送地區</div>
+        <select onchange="gmArea(this.value)" style="width:100%;padding:9px 6px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${areaOpts}</select></div>
+      <div><div style="font-size:11px;color:var(--sub);margin-bottom:3px;">燃油附加費 (%)</div>
+        <input type="number" step="0.01" value="${GM_STATE.fuelPct}" oninput="gmFuel(this.value)" style="width:100%;box-sizing:border-box;padding:8px 6px;border:1px solid var(--line);border-radius:8px;font-size:14px;"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;padding-top:16px;"><input type="checkbox" ${GM_STATE.withTax?'checked':''} onchange="gmTax(this.checked)">加計 5% 營業稅</label>
+    </div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px;">包裹資訊（多列會加總後一起計費）</div>
+    ${rows}
+    <div style="margin:8px 0 12px;display:flex;gap:8px;">
+      <button class="btn sm" onclick="gmAdd()">＋ 新增包裹</button>
+      <button class="btn sm ghost" onclick="gmClear()">清除</button>
+    </div>
+    <div id="gm-result"></div>
+    <div style="margin-top:12px;font-size:11.5px;color:var(--sub);line-height:1.7;">
+      費率為 2026-10-19 在好馬吉後台（蘿荔企業社帳號）「帳單試算管理 > 運費試算」實測反推，50+ 組對照點吻合；薇蔻目前沿用同一份費率。<br>
+      燃油附加費每月會變（目前 2026 年 10 月 42.75%），請依好馬吉當月公告調整，會記在這台瀏覽器。<br>
+      未含出口報關費、偏遠地區等其他附加費用；實際收費重量與金額以好馬吉帳單為準。
+    </div>
+  </div>`;
+  gmUpdateResult();
+}
+function gmUpdateResult(){
+  const el = document.getElementById('gm-result'); if(!el) return;
+  const s = gmCur();
+  const r = GM.calc(s.country, s.area, s.pkgs, parseFloat(GM_STATE.fuelPct)||0, GM_STATE.withTax);
+  if(!r){ el.innerHTML = '<div style="color:var(--sub);font-size:13px;">輸入重量或長寬高後即時顯示試算結果。</div>'; return; }
+  const n = v => 'NT$ ' + v.toLocaleString();
+  el.innerHTML = `
+    <div style="background:var(--warn-bg);border-radius:12px;padding:12px 14px;">
+      <div class="summary-grid" style="font-size:13px;">
+        <div>件數 <b>${r.count}</b></div><div>實重 <b>${r.actual} kg</b></div>
+        <div>材積重 <b>${r.volumetric} kg</b></div><div>計費重量 <b>${r.billable} kg</b></div>
+        <div>基本運費 <b>${n(r.base)}</b></div>
+        ${r.remote?`<div>偏遠加收 <b>${n(r.remote)}</b></div>`:''}
+        <div>燃油費 <b>${n(r.fuel)}</b></div>
+        ${GM_STATE.withTax?`<div>營業稅 5% <b>${n(r.tax)}</b></div>`:''}
+      </div>
+      <div style="margin-top:10px;font-size:20px;font-weight:800;">${GM_STATE.withTax?'含稅合計':'稅前運費合計'}　${n(r.total)}</div>
+      <button class="btn sm" style="margin-top:8px;" onclick="gmCopy()">複製結果文字</button>
+    </div>`;
+}
+function gmSet(i,f,v){ gmCur().pkgs[i][f]=v; gmUpdateResult(); }
+function gmAdd(){ gmCur().pkgs.push({l:'',w:'',h:'',kg:'',n:1}); renderGm(); }
+function gmDel(i){ const s=gmCur(); if(s.pkgs.length>1){ s.pkgs.splice(i,1); renderGm(); } }
+function gmClear(){ gmCur().pkgs=[{l:'',w:'',h:'',kg:'',n:1}]; renderGm(); }
+function gmCountry(v){ const s=gmCur(); s.country=v; s.area=0; renderGm(); }
+function gmArea(v){ gmCur().area=parseInt(v)||0; gmUpdateResult(); }
+function gmFuel(v){ GM_STATE.fuelPct=v; try{ localStorage.setItem('gm_fuel_pct', String(v)); }catch(e){} gmUpdateResult(); }
+function gmTax(on){ GM_STATE.withTax=on; gmUpdateResult(); }
+function gmCopy(){
+  const s=gmCur(), c=GM.countries[s.country];
+  const r=GM.calc(s.country,s.area,s.pkgs,parseFloat(GM_STATE.fuelPct)||0,GM_STATE.withTax); if(!r) return;
+  const txt = `好馬吉運費試算（${GM_CO_NAME[GM_STATE.company]}）\n${c.name} ${c.areas[s.area]}｜${c.channel}\n`+
+    `件數 ${r.count}｜實重 ${r.actual}kg｜材積 ${r.volumetric}kg｜計費重量 ${r.billable}kg\n`+
+    `基本運費 ${r.base}`+(r.remote?`｜偏遠 ${r.remote}`:'')+`｜燃油費 ${r.fuel}（${GM_STATE.fuelPct}%）`+(GM_STATE.withTax?`｜營業稅 ${r.tax}`:'')+
+    `\n${GM_STATE.withTax?'含稅':'稅前'}合計 NT$ ${r.total}`;
+  try{ navigator.clipboard.writeText(txt); }catch(e){}
+}
+renderGm();
 </script>
 </body>
 </html>
